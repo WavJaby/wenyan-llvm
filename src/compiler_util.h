@@ -8,26 +8,32 @@
 
 #include "lib/byte_buffer.h"
 
+// Internal variable
 extern int yylineno;
-extern int yycolumn;
-extern int yyoffset;
 extern int yyleng;
+extern int yychar;
 extern FILE* yyout;
 extern FILE* yyin;
 extern int yyparse();
 extern int yylex();
 extern int yylex_destroy();
 
-extern char* inputFilePath, *inputFileName;
+// Custom variable
+extern int yycolumn;
+extern int yyoffset;
+extern int yycolumnUtf8;
+extern int yylengUtf8;
+
+extern char *inputFilePath, *inputFileName;
 extern ByteBuffer methodByteBuff, constantByteBuff, mainFunByteBuff;
 extern bool compileError;
 extern int scopeLevel;
 
 
 #define code(format, ...) \
-fprintf(yyout, "%*s" format "\n", scopeLevel << 2, "", __VA_ARGS__)
+    fprintf(yyout, "%*s" format "\n", scopeLevel << 2, "", __VA_ARGS__)
 #define codeRaw(code) \
-fprintf(yyout, "%*s" code "\n", scopeLevel << 2, "")
+    fprintf(yyout, "%*s" code "\n", scopeLevel << 2, "")
 
 #define ERROR_PREFIX "%s:%d:%d: 錯誤: "
 #define ERROR_TEXT_BUFFER_LEN 128
@@ -36,16 +42,20 @@ fprintf(yyout, "%*s" code "\n", scopeLevel << 2, "")
 #define COLOR_YELLOW "\033[33m"
 #define COLOR_RESET "\033[0m"
 
-#define yyerrorf(format, ...)                                                                         \
+#define yyerroraf(format, ...)                                                                        \
     {                                                                                                 \
         compileError = true;                                                                          \
-        printf(ERROR_PREFIX format, inputFileName, yylineno, yycolumn - yyleng + 1, ##__VA_ARGS__); \
+        fprintf(stderr, ERROR_PREFIX format, inputFileName, yylineno, yycolumnUtf8 - yylengUtf8 + 1, ##__VA_ARGS__); \
         printErrorLine();                                                                             \
         YYABORT;                                                                                      \
     }
+#define yyerrorf(format, ...)                                                                         \
+    {                                                                                                 \
+        compileError = true;                                                                          \
+        fprintf(stderr, ERROR_PREFIX format, inputFileName, yylineno, yycolumnUtf8 - yylengUtf8 + 1, ##__VA_ARGS__); \
+        printErrorLine();                                                                             \
+    }
 
 void printErrorLine();
-
-void yyerror(char const* msg);
 
 #endif

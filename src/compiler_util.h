@@ -29,18 +29,19 @@ extern ByteBuffer methodByteBuff, constantByteBuff, mainFunByteBuff;
 extern bool compileError;
 extern int scopeLevel;
 
-
-#define code(format, ...) \
-    fprintf(yyout, "%*s" format "\n", scopeLevel << 2, "", __VA_ARGS__)
-#define codeRaw(code) \
-    fprintf(yyout, "%*s" code "\n", scopeLevel << 2, "")
-
 #define ERROR_PREFIX "%s:%d:%d: 錯誤: "
 #define ERROR_TEXT_BUFFER_LEN 128
 #define ERROR_TOKEN_BUFFER_LEN 64
 #define COLOR_RED "\033[31m"
 #define COLOR_YELLOW "\033[33m"
 #define COLOR_RESET "\033[0m"
+#define SCOPE_SPACE_FMT "%*s"
+#define SCOPE_SPACE_VAL scopeLevel << 2, ""
+
+#define code(format, ...) \
+fprintf(yyout, SCOPE_SPACE_FMT format "\n", SCOPE_SPACE_VAL, __VA_ARGS__)
+#define codeRaw(code) \
+fprintf(yyout, SCOPE_SPACE_FMT code "\n", SCOPE_SPACE_VAL)
 
 #define yyerroraf(format, ...)                                                                        \
     {                                                                                                 \

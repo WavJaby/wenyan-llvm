@@ -81,7 +81,7 @@ ConditionStmt
 
 OperationStmt
     : ValueCreateStmt PRINT { code_stdoutPrint(&$<obj_val>1, true); }
-    | ValueCreateStmt CALLED IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); free($<s_var>3); }
+    | ValueCreateStmt CALLED IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); }
 ;
 
 /* Value */

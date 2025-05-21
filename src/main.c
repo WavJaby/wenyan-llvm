@@ -193,7 +193,7 @@ bool code_stdoutPrint(Object* obj, bool newLine) {
     return true;
 }
 
-bool code_createVariable(Object* obj, const char* name) {
+bool code_createVariable(Object* obj, char* name) {
     Map* currentSymbolMap = scopeList.last->value;
 
     SymbolData* symbol;
@@ -215,9 +215,11 @@ bool code_createVariable(Object* obj, const char* name) {
                               SCOPE_SPACE_VAL, typeName, valueStr, typeName, symbol->index);
         free(valueStr);
 
+        free(name);
         freeObjectData(obj);
         return false;
     default:
+        free(name);
         freeObjectData(obj);
         return true;
     }

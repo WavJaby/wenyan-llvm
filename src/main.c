@@ -30,6 +30,8 @@ void utf8_init(void) {
 utf8_init(void) {}
 #endif
 
+#define cloneStruct(type, ptr) memcpy(malloc(sizeof(type)), ptr, sizeof(type))
+
 ByteBuffer methodByteBuff = byteBufferInit();
 ByteBuffer constantByteBuff = byteBufferInit();
 ByteBuffer mainFunByteBuff = byteBufferInit();
@@ -37,22 +39,27 @@ char *inputFilePath, *inputFileName;
 bool compileError;
 int scopeLevel = 0;
 
-bool mainVariableKeyEquals(void* key1, void* key2) {
+bool symbolKeyEquals(void* key1, void* key2) {
     return strcmp(key1, key2) == 0;
 }
 
-uint32_t mainVariableKeyHash(void* key) {
+uint32_t symbolKeyHash(void* key) {
     return strHash(key);
 }
 
-void mainVariableValueFree(void* key, void* value) {
+void symbolValueFree(void* key, void* value) {
     const SymbolData* symbol = value;
     free(symbol->name);
 }
 
-/** {@link SymbolData} */
-Map mainVariable = map_create(mainVariableKeyEquals, mainVariableKeyHash, mainVariableValueFree,
-                              WJCL_HASH_MAP_FREE_KEY | WJCL_HASH_MAP_FREE_VALUE);
+static const MapNodeInfo symbolMapInfo = {
+    symbolKeyEquals, symbolKeyHash, symbolValueFree,
+    WJCL_HASH_MAP_FREE_KEY | WJCL_HASH_MAP_FREE_VALUE
+};
+
+/** List<Map<{@link SymbolData}>> */
+LinkedList scopeList = linkedList_create();
+
 const ObjectType numberType2objectType[] = {
     [I32] = OBJECT_TYPE_I32,
     [I64] = OBJECT_TYPE_I64,
@@ -72,45 +79,68 @@ const char* objectType2strFormat[] = {
 int constStrCount = 0;
 
 void pushScope() {
+    Map* symbolMap = map_new(symbolMapInfo);
+    linkedList_addp(&scopeList, 0, symbolMap);
+
     printf("> (scope level %d)\n", ++scopeLevel);
 }
 
 void dumpScope() {
+    Map* symbolMap = scopeList.last->value;
+    map_free(symbolMap);
+    free(symbolMap);
+    
+    linkedList_deleteNode(&scopeList, scopeList.last);
+
     printf("> (scope level: %d)\n", scopeLevel);
 }
 
-Object createNumberObject(const ScientificNotation* number) {
-    ScientificNotation* numberClone = malloc(sizeof(ScientificNotation));
-    *numberClone = *number;
+void freeObjectData(Object* obj) {
+    free(obj->str);
+    obj->str = NULL;
+    free(obj->number);
+    obj->number = NULL;
+    free(obj->symbol);
+    obj->symbol = NULL;
+}
 
+Object object_createStr(char* str) {
+    printf("STRING \"%s\"\n", str);
+    return (Object){OBJECT_TYPE_STR, .str = str};
+}
+
+Object object_createNumber(const ScientificNotation* number) {
     char* str = sciToStr(number);
     printf("NUMBER %s\n", str);
     free(str);
 
-    return (Object){numberType2objectType[number->type], .number = numberClone};
+    return (Object){numberType2objectType[number->type], .number = cloneStruct(ScientificNotation, number)};
 }
 
-Object findIdentByName(char* name) {
-    SymbolData* symbol = map_get(&mainVariable, name);
-    if (!symbol)
-        return (Object){OBJECT_TYPE_UNDEFINED};
-    return (Object){OBJECT_TYPE_IDENT, .symbol = symbol};
+Object object_findIdentByName(char* name) {
+    for (LinkedListNode* node = scopeList.last; node; node = node->prev) {
+        Map* symbolMap = node->value;
+        const SymbolData* symbol = map_get(symbolMap, name);
+        if (symbol)
+            return (Object){OBJECT_TYPE_IDENT, .symbol = cloneStruct(SymbolData, symbol)};
+    }
+    yyerrorf("「%s」未宣，無由識之\n", name);
+    return (Object){OBJECT_TYPE_UNDEFINED};
 }
 
-bool code_stdoutPrint(Object* obj) {
-    bool newLine = true;
-
+bool code_stdoutPrint(Object* obj, bool newLine) {
     if (obj->type == OBJECT_TYPE_IDENT) {
         // Print variable
-        SymbolData* identObj = obj->symbol;
+        const SymbolData* identObj = obj->symbol;
         printf("GET IDENT: %s\n", identObj->name);
 
+        const char* typeFormat;
         // Load variable value
         switch (identObj->type) {
         case OBJECT_TYPE_I64:
         case OBJECT_TYPE_I32:
         case OBJECT_TYPE_F64:
-            const char* typeFormat = objectType2strFormat[identObj->type];
+            typeFormat = objectType2strFormat[identObj->type];
             byteBufferWriteFormat(&constantByteBuff,
                                   "@.str.%d = private unnamed_addr constant [%d x i8] c\"%s%s\"\n",
                                   constStrCount, 2 + newLine + 1, typeFormat, newLine ? "\\0A\\00" : "\\00");
@@ -124,18 +154,17 @@ bool code_stdoutPrint(Object* obj) {
             constStrCount++;
             break;
         default:
+            freeObjectData(obj);
             return true;
         }
-    }
-    else if (obj->type == OBJECT_TYPE_STR) {
-        char* str = obj->str;
+    } else if (obj->type == OBJECT_TYPE_STR) {
         // Print immediate string
-        const size_t constStrLen = strlen(str);
+        const size_t constStrLen = strlen(obj->str);
         byteBufferWriteFormat(&constantByteBuff,
                               "@.str.%d = private unnamed_addr constant [%llu x i8] c\"",
                               constStrCount, constStrLen + newLine + 1);
 
-        byteBufferWriteStrUtf8(&constantByteBuff, str);
+        byteBufferWriteStrUtf8(&constantByteBuff, obj->str);
         if (newLine) byteBufferWriteStrUtf8(&constantByteBuff, "\n");
 
         byteBufferWriteStr(&constantByteBuff, "\\00\"\n");
@@ -143,33 +172,61 @@ bool code_stdoutPrint(Object* obj) {
         byteBufferWriteFormat(&mainFunByteBuff, "  call i32 @printf(ptr @.str.%d)\n", constStrCount);
 
         constStrCount++;
-        free(str);
+        freeObjectData(obj);
+        return false;
     }
-    return false;
+
+    // Error
+    freeObjectData(obj);
+    return true;
 }
 
-bool code_createVariable(Object* obj, char* name) {
+bool code_createVariable(Object* obj, const char* name) {
+    Map* currentSymbolMap = scopeList.last->value;
+
+    SymbolData* symbol;
     switch (obj->type) {
     case OBJECT_TYPE_I32:
     case OBJECT_TYPE_I64:
     case OBJECT_TYPE_F64:
-        SymbolData* symbol = malloc(sizeof(SymbolData));
-        symbol->type = obj->type;
-        symbol->name = strdup(name);
-        symbol->index = (int32_t)mainVariable.size;
-        map_putpp(&mainVariable, strdup(name), symbol);
+        // Create symbol
+        symbol = malloc(sizeof(SymbolData));
+        *symbol = (SymbolData){.type = obj->type, .name = strdup(name), .index = (int32_t)currentSymbolMap->size};
+        map_putpp(currentSymbolMap, strdup(name), symbol);
 
         char* valueStr = sciToStr(obj->number);
 
         const char* typeName = objectType2llvmType[obj->type];
         byteBufferWriteFormat(&mainFunByteBuff, "  %var.%d = alloca %s\n  store %s %s, %s* %var.%d\n",
                               symbol->index, typeName, typeName, valueStr, typeName, symbol->index);
-
         free(valueStr);
+
+        freeObjectData(obj);
         return false;
     default:
+        freeObjectData(obj);
         return true;
     }
+}
+
+bool code_forLoop(Object* obj) {
+    freeObjectData(obj);
+    return false;
+}
+
+void freeAll() {
+    // Free all scope
+    linkedList_foreach(&scopeList, node) {
+        Map* symbolMap = linkedList_nodeVal(Map*, node);
+        map_free(symbolMap);
+        free(symbolMap);
+    }
+    linkedList_free(&scopeList);
+    
+    byteBufferFree(&methodByteBuff, false);
+    byteBufferFree(&constantByteBuff, false);
+    byteBufferFree(&mainFunByteBuff, false);
+    yylex_destroy();
 }
 
 int main(int argc, char* argv[]) {
@@ -179,22 +236,20 @@ int main(int argc, char* argv[]) {
     if (argc == 3) {
         yyin = fopen(inputFilePath = argv[1], "rb");
         yyout = fopen(outputFilePath = argv[2], "w");
-    }
-    else if (argc == 2) {
+    } else if (argc == 2) {
         yyin = fopen(inputFilePath = argv[1], "rb");
         yyout = stdout;
-    }
-    else {
+    } else {
         printf("require input file");
-        exit(1);
+        return 1;
     }
     if (!yyin) {
         printf("file `%s` doesn't exists or cannot be opened\n", inputFilePath);
-        exit(1);
+        return 1;
     }
     if (!yyout) {
         printf("file `%s` doesn't exists or cannot be opened\n", outputFilePath);
-        exit(1);
+        return 1;
     }
 
     // Extract file name
@@ -216,6 +271,12 @@ int main(int argc, char* argv[]) {
     scopeLevel = -1;
     yylineno = 1;
     yyparse();
+
+    if (compileError) {
+        fclose(yyin);
+        freeAll();
+        return 2;
+    }
 
     byteBufferWriteToFile(&constantByteBuff, yyout);
     codeRaw("");
@@ -244,6 +305,6 @@ int main(int argc, char* argv[]) {
     printf("\nTotal lines: %d\n", yylineno);
     fclose(yyin);
 
-    yylex_destroy();
+    freeAll();
     return 0;
 }

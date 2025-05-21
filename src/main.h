@@ -7,10 +7,13 @@
 void pushScope();
 void dumpScope();
 
-Object createNumberObject(const ScientificNotation* number);
-Object findIdentByName(char* name);
-bool code_stdoutPrint(Object* obj);
-bool code_createVariable(Object* obj, char* name);
+Object object_createStr(char* str);
+Object object_createNumber(const ScientificNotation* number);
+Object object_findIdentByName(char* name);
+
+bool code_stdoutPrint(Object* obj, bool newLine);
+bool code_createVariable(Object* obj, const char* name);
+bool code_forLoop(Object* obj);
 
 /*
 extern ObjectType variableIdentType;

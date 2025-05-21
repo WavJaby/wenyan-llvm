@@ -17,7 +17,7 @@ typedef struct ByteBuffer {
 
 void byteBufferWriteI16(ByteBuffer* byteBuffer, uint16_t data);
 
-void byteBufferWriteStrUtf8(ByteBuffer* byteBuffer, uint8_t* str);
+void byteBufferWriteStrUtf8(ByteBuffer* byteBuffer, const char* str);
 
 void byteBufferWriteStr(ByteBuffer* byteBuffer, char* str);
 

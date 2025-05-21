@@ -36,7 +36,7 @@ char to_hex_char(uint8_t digit) {
     return digit - 10 + 'A';
 }
 
-void byteBufferWriteStrUtf8(ByteBuffer* byteBuffer, uint8_t* str) {
+void byteBufferWriteStrUtf8(ByteBuffer* byteBuffer, const char* str) {
     while (*str) {
         const size_t offset = byteBuffer->len;
         if (*str >= 0x7F || *str < ' ') {

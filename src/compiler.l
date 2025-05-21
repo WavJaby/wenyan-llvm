@@ -46,16 +46,9 @@
 
     int strLastTokenLen = 0;
     bool checkStringEnd() {
-        // utf8_string utf8 = make_utf8_string(str);
-        // utf8_char_iter iter = make_utf8_char_iter(utf8);
-        // utf8_char c;
-        // while((c = next_utf8_char(&iter)).byte_len) {
-        // }
-
         if (yyleng - strLastTokenLen >= 6) {
             strLastTokenLen = yyleng - 6;
-            yylval.s_var = (char*)malloc(strLastTokenLen + 1);
-            memcpy(yylval.s_var, yytext, strLastTokenLen);
+            yylval.s_var = memcpy(malloc(strLastTokenLen + 1), yytext, strLastTokenLen);
             yylval.s_var[strLastTokenLen] = 0;
             return true;
         }
@@ -127,6 +120,10 @@ EXCLUDE_QUO {ASCII}|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{
     return NUMBER_LIT;
 }
 
+"云云" { return END_BRACKET; }
+
+"為是" { return FOR; }
+"遍" { return TIMES; }
 
 "有數" { return IMMEDIATE_NUMBER_IS; }
 

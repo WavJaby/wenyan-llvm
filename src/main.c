@@ -79,20 +79,22 @@ const char* objectType2strFormat[] = {
 int constStrCount = 0;
 
 void pushScope() {
+    printf("> (scope level %d)\n", ++scopeLevel);
+    
     Map* symbolMap = map_new(symbolMapInfo);
     linkedList_addp(&scopeList, 0, symbolMap);
-
-    printf("> (scope level %d)\n", ++scopeLevel);
 }
 
 void dumpScope() {
+    printf("< (scope level: %d)\n", scopeLevel);
+    
     Map* symbolMap = scopeList.last->value;
     map_free(symbolMap);
     free(symbolMap);
     
     linkedList_deleteNode(&scopeList, scopeList.last);
-
-    printf("> (scope level: %d)\n", scopeLevel);
+    
+    --scopeLevel;
 }
 
 void freeObjectData(Object* obj) {
@@ -210,6 +212,11 @@ bool code_createVariable(Object* obj, const char* name) {
 }
 
 bool code_forLoop(Object* obj) {
+    return false;
+}
+
+
+bool code_forLoopEnd(Object* obj) {
     freeObjectData(obj);
     return false;
 }

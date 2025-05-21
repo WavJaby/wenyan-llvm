@@ -14,6 +14,7 @@ Object object_findIdentByName(char* name);
 bool code_stdoutPrint(Object* obj, bool newLine);
 bool code_createVariable(Object* obj, const char* name);
 bool code_forLoop(Object* obj);
+bool code_forLoopEnd(Object* obj);
 
 /*
 extern ObjectType variableIdentType;

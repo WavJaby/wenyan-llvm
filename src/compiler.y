@@ -42,25 +42,46 @@
 
 %nonassoc THEN
 %nonassoc ELSE
+%nonassoc END_BRACKET
 
 /* Yacc will start at this nonterminal */
 %start Program
 %%
 /* Grammar section */
 
+/* Scope */
 Program
-    : { pushScope(); } GlobalStmtList { dumpScope(); }
+    : GlobalScopeStmt
     | /* Empty file */
 ;
 
-GlobalStmtList 
-    : GlobalStmtList GlobalStmt
-    | GlobalStmt
+GlobalScopeStmt
+    : { pushScope(); } BodyListStmt { dumpScope(); }
 ;
 
-GlobalStmt
-    : ValueStmt PRINT { code_stdoutPrint(&$<obj_val>1); }
-    | ValueStmt CALLED IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); free($<s_var>3); }
+ScopeStmt
+    : { pushScope(); } BodyListStmt { dumpScope(); } END_BRACKET
+;
+
+/* Scope Body */
+BodyListStmt
+    : BodyListStmt BodyStmt
+    | BodyStmt
+;
+
+BodyStmt
+    : OperationStmt
+    | ConditionStmt
+;
+
+/* Condition and Operation */
+ConditionStmt
+    : FOR ValueStmt TIMES { code_forLoop(&$<obj_val>2); } ScopeStmt { code_forLoopEnd(&$<obj_val>2); }
+;
+
+OperationStmt
+    : ValueCreateStmt PRINT { code_stdoutPrint(&$<obj_val>1, true); }
+    | ValueCreateStmt CALLED IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); free($<s_var>3); }
 ;
 
 /* Value */

@@ -26,9 +26,7 @@
 /* Token without return */
 %token PRINT
 %token IMMEDIATE IS CALLED NUMBER STRING IMMEDIATE_NUMBER_IS
-%token SHR SHL BAN BOR BNT BXO ADD SUB MUL DIV REM NOT GTR LES GEQ LEQ EQL NEQ LAN LOR
-%token VAL_ASSIGN ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN REM_ASSIGN BAN_ASSIGN BOR_ASSIGN BXO_ASSIGN SHR_ASSIGN SHL_ASSIGN INC_ASSIGN DEC_ASSIGN
-%token IF ELSE FOR WHILE RETURN BREAK CONTINUE
+%token FOR TIMES END_BRACKET
 
 /* Token with return, which need to sepcify type */
 %token <var_type> VARIABLE_T
@@ -39,21 +37,8 @@
 %token <s_var> IDENT
 
 /* Nonterminal with return, which need to sepcify type */
+%type <obj_val> ValueCreateStmt
 %type <obj_val> ValueStmt
-
-%right VAL_ASSIGN ADD_ASSIGN SUB_ASSIGN MUL_ASSIGN DIV_ASSIGN REM_ASSIGN BAN_ASSIGN BOR_ASSIGN BXO_ASSIGN SHR_ASSIGN SHL_ASSIGN
-%left LOR
-%left LAN
-%left BOR
-%left BXO
-%left BAN
-%left EQL NEQ
-%left LES LEQ GTR GEQ
-%left SHL SHR
-%left ADD SUB
-%left MUL DIV REM
-%right NOT BNT
-%left INC_ASSIGN DEC_ASSIGN
 
 %nonassoc THEN
 %nonassoc ELSE
@@ -78,16 +63,18 @@ GlobalStmt
     | ValueStmt CALLED IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); free($<s_var>3); }
 ;
 
+/* Value */
 ValueStmt
-    : IMMEDIATE STRING IS STR_LIT { $$ = (Object){OBJECT_TYPE_STR, .str = $<s_var>4}; printf("STR_LIT \"%s\"\n", $<s_var>4); }
-    | IMMEDIATE NUMBER IS NUMBER_LIT { $$ = createNumberObject(&$<number_var>4); }
-    | IMMEDIATE_NUMBER_IS NUMBER_LIT { $$ = createNumberObject(&$<number_var>2); }
-    | IMMEDIATE STRING IS IDENT {
-        $$ = findIdentByName($<s_var>4);
-        if ($$.type == OBJECT_TYPE_UNDEFINED)
-            yyerroraf("「%s」未定義\n", $<s_var>4);
-        free($<s_var>4);
-    }
+    : STR_LIT { $$ = object_createStr($<s_var>1); }
+    | NUMBER_LIT { $$ = object_createNumber(&$<number_var>1); }
+    | IDENT { if (($$ = object_findIdentByName($<s_var>1)).type == OBJECT_TYPE_UNDEFINED) YYABORT; }
+;
+
+ValueCreateStmt
+    : IMMEDIATE STRING IS STR_LIT { $$ = object_createStr($<s_var>4); }
+    | IMMEDIATE NUMBER IS NUMBER_LIT { $$ = object_createNumber(&$<number_var>4); }
+    | IMMEDIATE_NUMBER_IS NUMBER_LIT { $$ = object_createNumber(&$<number_var>2); }
+    | IMMEDIATE STRING IS IDENT { if (($$ = object_findIdentByName($<s_var>4)).type == OBJECT_TYPE_UNDEFINED) YYABORT; }
 ;
 
 %%

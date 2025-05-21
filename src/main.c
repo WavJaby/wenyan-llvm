@@ -57,8 +57,16 @@ static const MapNodeInfo symbolMapInfo = {
     WJCL_HASH_MAP_FREE_KEY | WJCL_HASH_MAP_FREE_VALUE
 };
 
-/** List<Map<{@link SymbolData}>> */
+/** LinkedList<Map<@link SymbolData>> */
 LinkedList scopeList = linkedList_create();
+
+typedef struct {
+    int32_t i;
+    SymbolData symbol;
+} LoopInfo;
+
+/** LinkedList<@link LoopInfo> */
+LinkedList loopLabelList = linkedList_create();
 
 const ObjectType numberType2objectType[] = {
     [I32] = OBJECT_TYPE_I32,
@@ -77,23 +85,24 @@ const char* objectType2strFormat[] = {
 };
 
 int constStrCount = 0;
+int loopLabelCount = 0;
 
 void pushScope() {
     printf("> (scope level %d)\n", ++scopeLevel);
-    
+
     Map* symbolMap = map_new(symbolMapInfo);
     linkedList_addp(&scopeList, 0, symbolMap);
 }
 
 void dumpScope() {
     printf("< (scope level: %d)\n", scopeLevel);
-    
+
     Map* symbolMap = scopeList.last->value;
     map_free(symbolMap);
     free(symbolMap);
-    
+
     linkedList_deleteNode(&scopeList, scopeList.last);
-    
+
     --scopeLevel;
 }
 
@@ -149,10 +158,10 @@ bool code_stdoutPrint(Object* obj, bool newLine) {
 
             const char* typeName = objectType2llvmType[identObj->type];
 
-            byteBufferWriteFormat(&mainFunByteBuff, "  %val.%d = load %s, %s* %var.%d\n",
-                                  identObj->index, typeName, typeName, identObj->index);
-            byteBufferWriteFormat(&mainFunByteBuff, "  call i32 @printf(ptr @.str.%d, %s %val.%d)\n",
-                                  constStrCount, typeName, identObj->index);
+            byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "%val.%d = load %s, %s* %var.%d\n",
+                                  SCOPE_SPACE_VAL, identObj->index, typeName, typeName, identObj->index);
+            byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "call i32 @printf(ptr @.str.%d, %s %val.%d)\n",
+                                  SCOPE_SPACE_VAL, constStrCount, typeName, identObj->index);
             constStrCount++;
             break;
         default:
@@ -171,7 +180,8 @@ bool code_stdoutPrint(Object* obj, bool newLine) {
 
         byteBufferWriteStr(&constantByteBuff, "\\00\"\n");
 
-        byteBufferWriteFormat(&mainFunByteBuff, "  call i32 @printf(ptr @.str.%d)\n", constStrCount);
+        byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "call i32 @printf(ptr @.str.%d)\n",
+                              SCOPE_SPACE_VAL, constStrCount);
 
         constStrCount++;
         freeObjectData(obj);
@@ -199,8 +209,10 @@ bool code_createVariable(Object* obj, const char* name) {
         char* valueStr = sciToStr(obj->number);
 
         const char* typeName = objectType2llvmType[obj->type];
-        byteBufferWriteFormat(&mainFunByteBuff, "  %var.%d = alloca %s\n  store %s %s, %s* %var.%d\n",
-                              symbol->index, typeName, typeName, valueStr, typeName, symbol->index);
+        byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "%var.%d = alloca %s\n",
+                              SCOPE_SPACE_VAL, symbol->index, typeName);
+        byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "store %s %s, %s* %var.%d\n",
+                              SCOPE_SPACE_VAL, typeName, valueStr, typeName, symbol->index);
         free(valueStr);
 
         freeObjectData(obj);
@@ -212,11 +224,74 @@ bool code_createVariable(Object* obj, const char* name) {
 }
 
 bool code_forLoop(Object* obj) {
+    LoopInfo* loop = malloc(sizeof(LoopInfo));
+    loop->i = loopLabelCount++;
+    linkedList_addp(&loopLabelList, true, loop);
+
+    // Create loop count %loop%d.i
+    byteBufferWriteFormat(&mainFunByteBuff, "\n" SCOPE_SPACE_FMT "%%loop%d.i = alloca i32\n",
+                          SCOPE_SPACE_VAL, loop->i);
+
+    // Copy loop count to %loop%d.i
+    const SymbolData* symbol;
+    switch (obj->type) {
+    case OBJECT_TYPE_I32:
+    case OBJECT_TYPE_I64:
+    case OBJECT_TYPE_F64:
+        char* num = sciToStr(obj->number);
+        byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "store i32 %s, ptr %%loop%d.i\n",
+                              SCOPE_SPACE_VAL, num, loop->i);
+        free(num);
+        break;
+    case OBJECT_TYPE_IDENT:
+        symbol = obj->symbol;
+
+        byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "%%loop%d.i.init = load i32, ptr %var.%d\n",
+                              SCOPE_SPACE_VAL, loop->i, symbol->index);
+        byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "store i32 %%loop%d.i.init, ptr %%loop%d.i\n",
+                              SCOPE_SPACE_VAL, loop->i, loop->i);
+        break;
+    default:
+        return true;
+    }
+    // Check condition
+    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "br label %%loop%d.header\n",
+                          SCOPE_SPACE_VAL, loop->i);
+
+    byteBufferWriteFormat(&mainFunByteBuff, "\n" SCOPE_SPACE_FMT "loop%d.header:\n",
+                          SCOPE_SPACE_VAL, loop->i);
+    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "    %%loop%d.i.val = load i32, ptr %%loop%d.i\n",
+                          SCOPE_SPACE_VAL, loop->i, loop->i);
+    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "    %%loop%d.cond = icmp sgt i32 %%loop%d.i.val, 0\n",
+                          SCOPE_SPACE_VAL, loop->i, loop->i);
+    byteBufferWriteFormat(&mainFunByteBuff,
+                          SCOPE_SPACE_FMT "    br i1 %%loop%d.cond, label %%loop%d.body, label %%loop%d.exit\n\n",
+                          SCOPE_SPACE_VAL, loop->i, loop->i, loop->i);
+
+    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "loop%d.body:\n",
+                          SCOPE_SPACE_VAL, loop->i);
     return false;
 }
 
 
 bool code_forLoopEnd(Object* obj) {
+    const LoopInfo* loop = loopLabelList.last->value;
+
+    // Decrease loop count
+    byteBufferWriteFormat(&mainFunByteBuff, "\n" SCOPE_SPACE_FMT ";loop%d.update:\n",
+                          SCOPE_SPACE_VAL, loop->i);
+    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "    %%loop%d.i.new = sub i32 %%loop%d.i.val, 1\n",
+                          SCOPE_SPACE_VAL, loop->i, loop->i);
+    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "    store i32 %%loop%d.i.new, ptr %%loop%d.i\n",
+                          SCOPE_SPACE_VAL, loop->i, loop->i);
+    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "    br label %%loop%d.header\n",
+                          SCOPE_SPACE_VAL, loop->i);
+
+
+    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "loop%d.exit:\n",
+                          SCOPE_SPACE_VAL, loop->i);
+
+    linkedList_deleteNode(&loopLabelList, loopLabelList.last);
     freeObjectData(obj);
     return false;
 }
@@ -229,7 +304,7 @@ void freeAll() {
         free(symbolMap);
     }
     linkedList_free(&scopeList);
-    
+
     byteBufferFree(&methodByteBuff, false);
     byteBufferFree(&constantByteBuff, false);
     byteBufferFree(&mainFunByteBuff, false);
@@ -275,7 +350,7 @@ int main(int argc, char* argv[]) {
     code("source_filename = \"%s\"", inputFileName);
     codeRaw("");
 
-    scopeLevel = -1;
+    // Start parsing
     yylineno = 1;
     yyparse();
 
@@ -290,7 +365,7 @@ int main(int argc, char* argv[]) {
     codeRaw("define i32 @main() {");
     codeRaw("call void @utf8_init()");
     byteBufferWriteToFile(&mainFunByteBuff, yyout);
-    codeRaw("ret i32 0");
+    codeRaw("    ret i32 0");
     codeRaw("}");
 
     codeRaw("");

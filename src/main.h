@@ -7,6 +7,8 @@
 void pushScope();
 void dumpScope();
 
+Object createNumberObject(const ScientificNotation* number);
+Object findIdentByName(char* name);
 bool code_stdoutPrint(Object* obj);
 bool code_createVariable(Object* obj, char* name);
 

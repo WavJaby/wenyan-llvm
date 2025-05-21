@@ -14,11 +14,10 @@ typedef enum _objectType {
     // OBJECT_TYPE_BYTE,
     OBJECT_TYPE_CHAR,
     // OBJECT_TYPE_SHORT,
-    OBJECT_TYPE_INT,
-    OBJECT_TYPE_LONG,
-    // OBJECT_TYPE_FLOAT,
-    OBJECT_TYPE_DOUBLE,
-    OBJECT_TYPE_NUMBER,
+    OBJECT_TYPE_I32,
+    OBJECT_TYPE_I64,
+    // OBJECT_TYPE_F32,
+    OBJECT_TYPE_F64,
     OBJECT_TYPE_STR,
     OBJECT_TYPE_IDENT,
 } ObjectType;
@@ -35,25 +34,22 @@ typedef enum _objectType {
 
 #define asVal(val) (*(int64_t*)&(val))
 
-
-typedef struct _object {
+typedef struct {
     ObjectType type;
-    // uint32_t array;
-    char* str;
-    ScientificNotation number;
-    // uint8_t flag;
-    // SymbolData* symbol;
-    // LinkedList* arraySubscript;
-} Object;
-
-typedef struct _symbolData {
     char* name;
     int32_t index;
     int64_t addr;
     int32_t lineno;
-    char* func_sig;
-    // Store immutable data here
-    Object object;
 } SymbolData;
+
+typedef struct {
+    ObjectType type;
+    // uint32_t array;
+    char* str;
+    ScientificNotation* number;
+    // uint8_t flag;
+    SymbolData* symbol;
+    // LinkedList* arraySubscript;
+} Object;
 
 #endif /* COMPILER_COMMON_H */

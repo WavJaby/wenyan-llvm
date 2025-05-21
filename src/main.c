@@ -53,15 +53,20 @@ void mainVariableValueFree(void* key, void* value) {
 /** {@link SymbolData} */
 Map mainVariable = map_create(mainVariableKeyEquals, mainVariableKeyHash, mainVariableValueFree,
                               WJCL_HASH_MAP_FREE_KEY | WJCL_HASH_MAP_FREE_VALUE);
-const char* numberType2llvmType[] = {
-    [I32] = "i32",
-    [I64] = "i64",
-    [F64] = "double",
+const ObjectType numberType2objectType[] = {
+    [I32] = OBJECT_TYPE_I32,
+    [I64] = OBJECT_TYPE_I64,
+    [F64] = OBJECT_TYPE_F64,
 };
-const char* numberType2strFormat[] = {
-    [I32] = "%d",
-    [I64] = "%lld",
-    [F64] = "%.16g",
+const char* objectType2llvmType[] = {
+    [OBJECT_TYPE_I32] = "i32",
+    [OBJECT_TYPE_I64] = "i64",
+    [OBJECT_TYPE_F64] = "double",
+};
+const char* objectType2strFormat[] = {
+    [OBJECT_TYPE_I32] = "%d",
+    [OBJECT_TYPE_I64] = "%lld",
+    [OBJECT_TYPE_F64] = "%.16g",
 };
 
 int constStrCount = 0;
@@ -74,28 +79,43 @@ void dumpScope() {
     printf("> (scope level: %d)\n", scopeLevel);
 }
 
-string createUtf8String(char* str) {}
+Object createNumberObject(const ScientificNotation* number) {
+    ScientificNotation* numberClone = malloc(sizeof(ScientificNotation));
+    *numberClone = *number;
+
+    char* str = sciToStr(number);
+    printf("NUMBER %s\n", str);
+    free(str);
+
+    return (Object){numberType2objectType[number->type], .number = numberClone};
+}
+
+Object findIdentByName(char* name) {
+    SymbolData* symbol = map_get(&mainVariable, name);
+    if (!symbol)
+        return (Object){OBJECT_TYPE_UNDEFINED};
+    return (Object){OBJECT_TYPE_IDENT, .symbol = symbol};
+}
 
 bool code_stdoutPrint(Object* obj) {
     bool newLine = true;
-    char* str = obj->str;
 
     if (obj->type == OBJECT_TYPE_IDENT) {
         // Print variable
-        printf("GET IDENT: %s\n", str);
-        SymbolData* identObj = map_get(&mainVariable, str);
-        if (!identObj)
-            return true;
+        SymbolData* identObj = obj->symbol;
+        printf("GET IDENT: %s\n", identObj->name);
 
         // Load variable value
-        switch (identObj->object.type) {
-        case OBJECT_TYPE_NUMBER:
-            const char* typeFormat = numberType2strFormat[obj->number.type];
+        switch (identObj->type) {
+        case OBJECT_TYPE_I64:
+        case OBJECT_TYPE_I32:
+        case OBJECT_TYPE_F64:
+            const char* typeFormat = objectType2strFormat[identObj->type];
             byteBufferWriteFormat(&constantByteBuff,
                                   "@.str.%d = private unnamed_addr constant [%d x i8] c\"%s%s\"\n",
                                   constStrCount, 2 + newLine + 1, typeFormat, newLine ? "\\0A\\00" : "\\00");
 
-            const char* typeName = numberType2llvmType[obj->number.type];
+            const char* typeName = objectType2llvmType[identObj->type];
 
             byteBufferWriteFormat(&mainFunByteBuff, "  %val.%d = load %s, %s* %var.%d\n",
                                   identObj->index, typeName, typeName, identObj->index);
@@ -104,16 +124,18 @@ bool code_stdoutPrint(Object* obj) {
             constStrCount++;
             break;
         default:
-
+            return true;
         }
-    } else if (obj->type == OBJECT_TYPE_STR) {
+    }
+    else if (obj->type == OBJECT_TYPE_STR) {
+        char* str = obj->str;
         // Print immediate string
         const size_t constStrLen = strlen(str);
         byteBufferWriteFormat(&constantByteBuff,
                               "@.str.%d = private unnamed_addr constant [%llu x i8] c\"",
                               constStrCount, constStrLen + newLine + 1);
 
-        byteBufferWriteStrUtf8(&constantByteBuff, (uint8_t*)str);
+        byteBufferWriteStrUtf8(&constantByteBuff, str);
         if (newLine) byteBufferWriteStrUtf8(&constantByteBuff, "\n");
 
         byteBufferWriteStr(&constantByteBuff, "\\00\"\n");
@@ -121,31 +143,33 @@ bool code_stdoutPrint(Object* obj) {
         byteBufferWriteFormat(&mainFunByteBuff, "  call i32 @printf(ptr @.str.%d)\n", constStrCount);
 
         constStrCount++;
+        free(str);
     }
-
-    free(str);
     return false;
 }
 
 bool code_createVariable(Object* obj, char* name) {
-    if (obj->type == OBJECT_TYPE_NUMBER) {
+    switch (obj->type) {
+    case OBJECT_TYPE_I32:
+    case OBJECT_TYPE_I64:
+    case OBJECT_TYPE_F64:
         SymbolData* symbol = malloc(sizeof(SymbolData));
+        symbol->type = obj->type;
         symbol->name = strdup(name);
-        symbol->object = *obj; // Clone immutable object data
-        symbol->index = mainVariable.size;
+        symbol->index = (int32_t)mainVariable.size;
         map_putpp(&mainVariable, strdup(name), symbol);
 
-        char* valueStr = sciToStr(&obj->number);
+        char* valueStr = sciToStr(obj->number);
 
-        const char* typeName = numberType2llvmType[obj->number.type];
+        const char* typeName = objectType2llvmType[obj->type];
         byteBufferWriteFormat(&mainFunByteBuff, "  %var.%d = alloca %s\n  store %s %s, %s* %var.%d\n",
                               symbol->index, typeName, typeName, valueStr, typeName, symbol->index);
 
         free(valueStr);
+        return false;
+    default:
+        return true;
     }
-
-    free(name);
-    return false;
 }
 
 int main(int argc, char* argv[]) {
@@ -153,12 +177,14 @@ int main(int argc, char* argv[]) {
 
     char* outputFilePath = NULL;
     if (argc == 3) {
-        yyin = fopen(inputFilePath = argv[1], "r");
+        yyin = fopen(inputFilePath = argv[1], "rb");
         yyout = fopen(outputFilePath = argv[2], "w");
-    } else if (argc == 2) {
-        yyin = fopen(inputFilePath = argv[1], "r");
+    }
+    else if (argc == 2) {
+        yyin = fopen(inputFilePath = argv[1], "rb");
         yyout = stdout;
-    } else {
+    }
+    else {
         printf("require input file");
         exit(1);
     }

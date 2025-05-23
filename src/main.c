@@ -31,10 +31,12 @@ utf8_init(void) {}
 #endif
 
 #define cloneStruct(type, ptr) memcpy(malloc(sizeof(type)), ptr, sizeof(type))
+#define buffPrintln(buff, format, ...) \
+    byteBufferWriteFormat(buff, SCOPE_SPACE_FMT format "\n", SCOPE_SPACE_VAL, ##__VA_ARGS__)
 
-ByteBuffer methodByteBuff = byteBufferInit();
-ByteBuffer constantByteBuff = byteBufferInit();
-ByteBuffer mainFunByteBuff = byteBufferInit();
+ByteBuffer methodBuff = byteBufferInit();
+ByteBuffer constBuff = byteBufferInit();
+ByteBuffer mainFunBuff = byteBufferInit();
 char *inputFilePath, *inputFileName;
 bool compileError;
 int scopeLevel = 0;
@@ -152,15 +154,15 @@ bool code_stdoutPrint(Object* obj, bool newLine) {
         case OBJECT_TYPE_I32:
         case OBJECT_TYPE_F64:
             typeFormat = objectType2strFormat[identObj->type];
-            byteBufferWriteFormat(&constantByteBuff,
+            byteBufferWriteFormat(&constBuff,
                                   "@.str.%d = private unnamed_addr constant [%d x i8] c\"%s%s\"\n",
                                   constStrCount, 2 + newLine + 1, typeFormat, newLine ? "\\0A\\00" : "\\00");
 
             const char* typeName = objectType2llvmType[identObj->type];
 
-            byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "%val.%d = load %s, %s* %var.%d\n",
+            byteBufferWriteFormat(&mainFunBuff, SCOPE_SPACE_FMT "%val.%d = load %s, %s* %var.%d\n",
                                   SCOPE_SPACE_VAL, identObj->index, typeName, typeName, identObj->index);
-            byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "call i32 @printf(ptr @.str.%d, %s %val.%d)\n",
+            byteBufferWriteFormat(&mainFunBuff, SCOPE_SPACE_FMT "call i32 @printf(ptr @.str.%d, %s %val.%d)\n",
                                   SCOPE_SPACE_VAL, constStrCount, typeName, identObj->index);
             constStrCount++;
             break;
@@ -171,16 +173,16 @@ bool code_stdoutPrint(Object* obj, bool newLine) {
     } else if (obj->type == OBJECT_TYPE_STR) {
         // Print immediate string
         const size_t constStrLen = strlen(obj->str);
-        byteBufferWriteFormat(&constantByteBuff,
+        byteBufferWriteFormat(&constBuff,
                               "@.str.%d = private unnamed_addr constant [%llu x i8] c\"",
                               constStrCount, constStrLen + newLine + 1);
 
-        byteBufferWriteStrUtf8(&constantByteBuff, obj->str);
-        if (newLine) byteBufferWriteStrUtf8(&constantByteBuff, "\n");
+        byteBufferWriteStrUtf8(&constBuff, obj->str);
+        if (newLine) byteBufferWriteStrUtf8(&constBuff, "\n");
 
-        byteBufferWriteStr(&constantByteBuff, "\\00\"\n");
+        byteBufferWriteStr(&constBuff, "\\00\"\n");
 
-        byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "call i32 @printf(ptr @.str.%d)\n",
+        byteBufferWriteFormat(&mainFunBuff, SCOPE_SPACE_FMT "call i32 @printf(ptr @.str.%d)\n",
                               SCOPE_SPACE_VAL, constStrCount);
 
         constStrCount++;
@@ -209,9 +211,9 @@ bool code_createVariable(Object* obj, char* name) {
         char* valueStr = sciToStr(obj->number);
 
         const char* typeName = objectType2llvmType[obj->type];
-        byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "%var.%d = alloca %s\n",
+        byteBufferWriteFormat(&mainFunBuff, SCOPE_SPACE_FMT "%var.%d = alloca %s\n",
                               SCOPE_SPACE_VAL, symbol->index, typeName);
-        byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "store %s %s, %s* %var.%d\n",
+        byteBufferWriteFormat(&mainFunBuff, SCOPE_SPACE_FMT "store %s %s, %s* %var.%d\n",
                               SCOPE_SPACE_VAL, typeName, valueStr, typeName, symbol->index);
         free(valueStr);
 
@@ -230,9 +232,11 @@ bool code_forLoop(Object* obj) {
     loop->i = loopLabelCount++;
     linkedList_addp(&loopLabelList, true, loop);
 
-    // Create loop count %loop%d.i
-    byteBufferWriteFormat(&mainFunByteBuff, "\n" SCOPE_SPACE_FMT "%%loop%d.i = alloca i32\n",
-                          SCOPE_SPACE_VAL, loop->i);
+    // Create loop
+    buffPrintln(&mainFunBuff, "");
+    buffPrintln(&mainFunBuff, "br label %%loop%d.entry", loop->i);
+    buffPrintln(&mainFunBuff, "loop%d.entry:", loop->i);
+
 
     // Copy loop count to %loop%d.i
     const SymbolData* symbol;
@@ -240,38 +244,38 @@ bool code_forLoop(Object* obj) {
     case OBJECT_TYPE_I32:
     case OBJECT_TYPE_I64:
     case OBJECT_TYPE_F64:
+        buffPrintln(&mainFunBuff, "    br label %%loop%d.header", loop->i);
+        buffPrintln(&mainFunBuff, "loop%d.header:", loop->i);
+        buffPrintln(&mainFunBuff, "    %%loop%d.i = phi i32 [0, %%loop%d.entry], [%%loop%d.i.next, %%loop%d.update]",
+                    loop->i, loop->i, loop->i, loop->i);
+
         char* num = sciToStr(obj->number);
-        byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "store i32 %s, ptr %%loop%d.i\n",
-                              SCOPE_SPACE_VAL, num, loop->i);
+        buffPrintln(&mainFunBuff, "    %%loop%d.cond = icmp slt i32 %%loop%d.i, %s", loop->i, loop->i, num);
         free(num);
         break;
     case OBJECT_TYPE_IDENT:
         symbol = obj->symbol;
 
-        byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "%%loop%d.i.init = load i32, ptr %var.%d\n",
+        byteBufferWriteFormat(&mainFunBuff, SCOPE_SPACE_FMT "    %%loop%d.i.end = load i32, ptr %var.%d\n",
                               SCOPE_SPACE_VAL, loop->i, symbol->index);
-        byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "store i32 %%loop%d.i.init, ptr %%loop%d.i\n",
-                              SCOPE_SPACE_VAL, loop->i, loop->i);
+
+        buffPrintln(&mainFunBuff, "    br label %%loop%d.header", loop->i);
+        buffPrintln(&mainFunBuff, "loop%d.header:", loop->i);
+        buffPrintln(&mainFunBuff,
+                    "    %%loop%d.i = phi i32 [0, %%loop%d.entry], [%%loop%d.i.next, %%loop%d.update]",
+                    loop->i, loop->i, loop->i, loop->i);
+        buffPrintln(&mainFunBuff, "    %%loop%d.cond = icmp slt i32 %%loop%d.i, %%loop%d.i.end",
+                    loop->i, loop->i, loop->i);
+
         break;
     default:
         return true;
     }
-    // Check condition
-    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "br label %%loop%d.header\n",
-                          SCOPE_SPACE_VAL, loop->i);
 
-    byteBufferWriteFormat(&mainFunByteBuff, "\n" SCOPE_SPACE_FMT "loop%d.header:\n",
-                          SCOPE_SPACE_VAL, loop->i);
-    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "    %%loop%d.i.val = load i32, ptr %%loop%d.i\n",
-                          SCOPE_SPACE_VAL, loop->i, loop->i);
-    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "    %%loop%d.cond = icmp sgt i32 %%loop%d.i.val, 0\n",
-                          SCOPE_SPACE_VAL, loop->i, loop->i);
-    byteBufferWriteFormat(&mainFunByteBuff,
-                          SCOPE_SPACE_FMT "    br i1 %%loop%d.cond, label %%loop%d.body, label %%loop%d.exit\n\n",
-                          SCOPE_SPACE_VAL, loop->i, loop->i, loop->i);
+    buffPrintln(&mainFunBuff, "    br i1 %%loop%d.cond, label %%loop%d.body, label %%loop%d.exit",
+                loop->i, loop->i, loop->i);
 
-    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "loop%d.body:\n",
-                          SCOPE_SPACE_VAL, loop->i);
+    buffPrintln(&mainFunBuff, "loop%d.body:", loop->i);
     return false;
 }
 
@@ -279,19 +283,14 @@ bool code_forLoop(Object* obj) {
 bool code_forLoopEnd(Object* obj) {
     const LoopInfo* loop = loopLabelList.last->value;
 
-    // Decrease loop count
-    byteBufferWriteFormat(&mainFunByteBuff, "\n" SCOPE_SPACE_FMT ";loop%d.update:\n",
-                          SCOPE_SPACE_VAL, loop->i);
-    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "    %%loop%d.i.new = sub i32 %%loop%d.i.val, 1\n",
-                          SCOPE_SPACE_VAL, loop->i, loop->i);
-    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "    store i32 %%loop%d.i.new, ptr %%loop%d.i\n",
-                          SCOPE_SPACE_VAL, loop->i, loop->i);
-    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "    br label %%loop%d.header\n",
-                          SCOPE_SPACE_VAL, loop->i);
+    buffPrintln(&mainFunBuff, "    br label %%loop%d.update", loop->i);
 
+    buffPrintln(&mainFunBuff, "loop%d.update:", loop->i);
+    buffPrintln(&mainFunBuff, "    %%loop%d.i.next = add nsw i32 %%loop%d.i, 1", loop->i, loop->i);
+    buffPrintln(&mainFunBuff, "    br label %%loop%d.header", loop->i);
 
-    byteBufferWriteFormat(&mainFunByteBuff, SCOPE_SPACE_FMT "loop%d.exit:\n",
-                          SCOPE_SPACE_VAL, loop->i);
+    buffPrintln(&mainFunBuff, "loop%d.exit:", loop->i);
+    buffPrintln(&mainFunBuff, "");
 
     linkedList_deleteNode(&loopLabelList, loopLabelList.last);
     freeObjectData(obj);
@@ -307,9 +306,9 @@ void freeAll() {
     }
     linkedList_free(&scopeList);
 
-    byteBufferFree(&methodByteBuff, false);
-    byteBufferFree(&constantByteBuff, false);
-    byteBufferFree(&mainFunByteBuff, false);
+    byteBufferFree(&methodBuff, false);
+    byteBufferFree(&constBuff, false);
+    byteBufferFree(&mainFunBuff, false);
     yylex_destroy();
 }
 
@@ -362,11 +361,11 @@ int main(int argc, char* argv[]) {
         return 2;
     }
 
-    byteBufferWriteToFile(&constantByteBuff, yyout);
+    byteBufferWriteToFile(&constBuff, yyout);
     codeRaw("");
     codeRaw("define i32 @main() {");
     codeRaw("call void @utf8_init()");
-    byteBufferWriteToFile(&mainFunByteBuff, yyout);
+    byteBufferWriteToFile(&mainFunBuff, yyout);
     codeRaw("    ret i32 0");
     codeRaw("}");
 

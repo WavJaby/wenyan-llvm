@@ -25,7 +25,7 @@ extern int yycolumnUtf8;
 extern int yylengUtf8;
 
 extern char *inputFilePath, *inputFileName;
-extern ByteBuffer methodByteBuff, constantByteBuff, mainFunByteBuff;
+extern ByteBuffer methodBuff, constBuff, mainFunBuff;
 extern bool compileError;
 extern int scopeLevel;
 

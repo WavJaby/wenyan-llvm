@@ -232,6 +232,7 @@ bool code_forLoop(Object* obj) {
     loop->i = loopLabelCount++;
     linkedList_addp(&loopLabelList, true, loop);
 
+
     // Create loop
     buffPrintln(&mainFunBuff, "");
     buffPrintln(&mainFunBuff, "br label %%loop%d.entry", loop->i);
@@ -239,33 +240,37 @@ bool code_forLoop(Object* obj) {
 
 
     // Copy loop count to %loop%d.i
-    const SymbolData* symbol;
+    const char* llvmType;
     switch (obj->type) {
     case OBJECT_TYPE_I32:
     case OBJECT_TYPE_I64:
     case OBJECT_TYPE_F64:
+        loop->symbol = (SymbolData){.type = obj->type};
+        llvmType = objectType2llvmType[loop->symbol.type];
+
         buffPrintln(&mainFunBuff, "    br label %%loop%d.header", loop->i);
         buffPrintln(&mainFunBuff, "loop%d.header:", loop->i);
-        buffPrintln(&mainFunBuff, "    %%loop%d.i = phi i32 [0, %%loop%d.entry], [%%loop%d.i.next, %%loop%d.update]",
-                    loop->i, loop->i, loop->i, loop->i);
+        buffPrintln(&mainFunBuff, "    %%loop%d.i = phi %s [0, %%loop%d.entry], [%%loop%d.i.next, %%loop%d.update]",
+                    loop->i, llvmType, loop->i, loop->i, loop->i);
 
         char* num = sciToStr(obj->number);
-        buffPrintln(&mainFunBuff, "    %%loop%d.cond = icmp slt i32 %%loop%d.i, %s", loop->i, loop->i, num);
+        buffPrintln(&mainFunBuff, "    %%loop%d.cond = icmp slt %s %%loop%d.i, %s", loop->i, llvmType, loop->i, num);
         free(num);
         break;
     case OBJECT_TYPE_IDENT:
-        symbol = obj->symbol;
+        loop->symbol = *obj->symbol;
+        llvmType = objectType2llvmType[loop->symbol.type];
 
-        byteBufferWriteFormat(&mainFunBuff, SCOPE_SPACE_FMT "    %%loop%d.i.end = load i32, ptr %var.%d\n",
-                              SCOPE_SPACE_VAL, loop->i, symbol->index);
+        buffPrintln(&mainFunBuff, "    %%loop%d.i.end = load %s, ptr %var.%d\n",
+                    loop->i, llvmType, loop->symbol.index);
 
         buffPrintln(&mainFunBuff, "    br label %%loop%d.header", loop->i);
         buffPrintln(&mainFunBuff, "loop%d.header:", loop->i);
         buffPrintln(&mainFunBuff,
-                    "    %%loop%d.i = phi i32 [0, %%loop%d.entry], [%%loop%d.i.next, %%loop%d.update]",
-                    loop->i, loop->i, loop->i, loop->i);
-        buffPrintln(&mainFunBuff, "    %%loop%d.cond = icmp slt i32 %%loop%d.i, %%loop%d.i.end",
-                    loop->i, loop->i, loop->i);
+                    "    %%loop%d.i = phi %s [0, %%loop%d.entry], [%%loop%d.i.next, %%loop%d.update]",
+                    loop->i, llvmType, loop->i, loop->i, loop->i);
+        buffPrintln(&mainFunBuff, "    %%loop%d.cond = icmp slt %s %%loop%d.i, %%loop%d.i.end",
+                    loop->i, llvmType, loop->i, loop->i);
 
         break;
     default:
@@ -282,11 +287,12 @@ bool code_forLoop(Object* obj) {
 
 bool code_forLoopEnd(Object* obj) {
     const LoopInfo* loop = loopLabelList.last->value;
+    const char* llvmType = objectType2llvmType[loop->symbol.type];
 
     buffPrintln(&mainFunBuff, "    br label %%loop%d.update", loop->i);
 
     buffPrintln(&mainFunBuff, "loop%d.update:", loop->i);
-    buffPrintln(&mainFunBuff, "    %%loop%d.i.next = add nsw i32 %%loop%d.i, 1", loop->i, loop->i);
+    buffPrintln(&mainFunBuff, "    %%loop%d.i.next = add nsw %s %%loop%d.i, 1", loop->i, llvmType, loop->i);
     buffPrintln(&mainFunBuff, "    br label %%loop%d.header", loop->i);
 
     buffPrintln(&mainFunBuff, "loop%d.exit:", loop->i);

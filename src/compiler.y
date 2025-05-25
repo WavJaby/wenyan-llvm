@@ -15,7 +15,7 @@
 
     bool b_var;
     char c_var;
-    ScientificNotation number_var;
+    ScientificNotation n_var;
     char *s_var;
 
     Object obj_val;
@@ -25,19 +25,21 @@
 }
 /* Token without return */
 %token PRINT
-%token IMMEDIATE IS CALLED NUMBER STRING IMMEDIATE_NUMBER_IS
+%token IMMEDIATE IS AS NUMBER STRING IMMEDIATE_NUMBER_IS
 %token FOR TIMES END_BRACKET
+%token PAST VARIABLE ASSIGN TO_IT
 
 /* Token with return, which need to sepcify type */
 %token <var_type> VARIABLE_T
 %token <b_var> BOOL_LIT
 %token <c_var> CHAR_LIT
-%token <number_var> NUMBER_LIT
+%token <n_var> NUMBER_LIT
 %token <s_var> STR_LIT
 %token <s_var> IDENT
 
 /* Nonterminal with return, which need to sepcify type */
-%type <obj_val> ValueCreateStmt
+%type <obj_val> DefineStmt
+%type <obj_val> ExpressionStmt
 %type <obj_val> ValueStmt
 
 %nonassoc THEN
@@ -76,26 +78,30 @@ BodyStmt
 
 /* Condition and Operation */
 ConditionStmt
-    : FOR ValueStmt TIMES { code_forLoop(&$<obj_val>2); } ScopeStmt { code_forLoopEnd(&$<obj_val>2); }
+    : FOR ExpressionStmt TIMES { code_forLoop(&$<obj_val>2); } ScopeStmt { code_forLoopEnd(&$<obj_val>2); }
 ;
 
 OperationStmt
-    : ValueCreateStmt PRINT { code_stdoutPrint(&$<obj_val>1, true); }
-    | ValueCreateStmt CALLED IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); }
+    : DefineStmt PRINT { code_stdoutPrint(&$<obj_val>1, true); }
+    | DefineStmt AS IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); }
 ;
+
+DefineStmt
+    : IMMEDIATE STRING IS ExpressionStmt { $$ = $<obj_val>4; }
+    | IMMEDIATE NUMBER IS ExpressionStmt { $$ = $<obj_val>4; }
+    | IMMEDIATE_NUMBER_IS ExpressionStmt { $$ = $<obj_val>2; }
+;
+
+ExpressionStmt
+    : ValueStmt { $$ = $<obj_val>1; }
+;
+
 
 /* Value */
 ValueStmt
     : STR_LIT { $$ = object_createStr($<s_var>1); }
-    | NUMBER_LIT { $$ = object_createNumber(&$<number_var>1); }
+    | NUMBER_LIT { $$ = object_createNumber(&$<n_var>1); }
     | IDENT { if (($$ = object_findIdentByName($<s_var>1)).type == OBJECT_TYPE_UNDEFINED) YYABORT; }
-;
-
-ValueCreateStmt
-    : IMMEDIATE STRING IS STR_LIT { $$ = object_createStr($<s_var>4); }
-    | IMMEDIATE NUMBER IS NUMBER_LIT { $$ = object_createNumber(&$<number_var>4); }
-    | IMMEDIATE_NUMBER_IS NUMBER_LIT { $$ = object_createNumber(&$<number_var>2); }
-    | IMMEDIATE STRING IS IDENT { if (($$ = object_findIdentByName($<s_var>4)).type == OBJECT_TYPE_UNDEFINED) YYABORT; }
 ;
 
 %%

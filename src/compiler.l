@@ -115,7 +115,7 @@ EXCLUDE_QUO {ASCII}|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{
 <IDENT_CON>{EXCLUDE_QUO}+    { yylval.s_var = strdup(yytext); return IDENT; }
 
 {digit}+    {
-    if (chineseToArabic(yytext, &yylval.number_var))
+    if (chineseToArabic(yytext, &yylval.n_var))
         yyterminate();
     return NUMBER_LIT;
 }
@@ -132,7 +132,7 @@ EXCLUDE_QUO {ASCII}|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{
 "一言" { return STRING; }
 "一數" { return NUMBER; }
 
-"名之曰" { return CALLED; }
+"名之曰" { return AS; }
 "曰" { return IS; }
 
 "書之" { return PRINT; }

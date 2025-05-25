@@ -5,6 +5,7 @@ find_package(BISON REQUIRED)
 find_package(FLEX REQUIRED)
 
 # --- Define Source Files ---
+set(TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test)
 set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 set(LEX_SRC ${SRC_DIR}/compiler.l)
@@ -60,6 +61,6 @@ add_executable(
 # --- Define Test Executable ---
 add_executable(
         test
-        ${SRC_DIR}/test.c
+        ${TEST_DIR}/test.c
         ${SRC_DIR}/lib/chinese_number.c
 )

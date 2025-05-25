@@ -37,7 +37,7 @@ utf8_init(void) {}
 ByteBuffer methodBuff = byteBufferInit();
 ByteBuffer constBuff = byteBufferInit();
 ByteBuffer mainFunBuff = byteBufferInit();
-char *inputFilePath, *inputFileName;
+char *inputFilePath = NULL, *inputFileName = NULL;
 bool compileError;
 int scopeLevel = 0;
 
@@ -328,33 +328,37 @@ int main(int argc, char* argv[]) {
     } else if (argc == 2) {
         yyin = fopen(inputFilePath = argv[1], "rb");
         yyout = stdout;
+    } else if (argc == 1){
+        yyin = stdin;
+        yyout = stdout;
+        printf("===== Use stdin for parsing =====");
     } else {
-        printf("require input file");
-        return 1;
+        fprintf(stderr, "Usage: %s [input file] [output file]\n", argv[0]);
     }
     if (!yyin) {
-        printf("file `%s` doesn't exists or cannot be opened\n", inputFilePath);
+        fprintf(stderr, "file `%s` doesn't exists or cannot be opened\n", inputFilePath);
         return 1;
     }
     if (!yyout) {
-        printf("file `%s` doesn't exists or cannot be opened\n", outputFilePath);
+        fprintf(stderr, "file `%s` doesn't exists or cannot be opened\n", outputFilePath);
         return 1;
     }
 
     // Extract file name
-    inputFileName = strrchr(inputFilePath, '/');
-    if (inputFileName == NULL) {
-        inputFileName = strrchr(inputFilePath, '\\');
-    }
-    inputFileName = inputFileName == NULL ? inputFilePath : inputFileName + 1;
+    if (inputFilePath) {
+        inputFileName = strrchr(inputFilePath, '/');
+        if (inputFileName == NULL) {
+            inputFileName = strrchr(inputFilePath, '\\');
+        }
+        inputFileName = inputFileName == NULL ? inputFilePath : inputFileName + 1;
 
+        code("; ModuleID = '%s'", inputFileName);
+        code("source_filename = \"%s\"", inputFileName);
+    }
 
     // Start parsing
     // Object endl = {OBJECT_TYPE_STR, false, 0, 0, &(SymbolData){"endl", 0, -1}};
     // map_putpp(&staticVar, "endl", &endl);
-
-    code("; ModuleID = '%s'", inputFileName);
-    code("source_filename = \"%s\"", inputFileName);
     codeRaw("");
 
     // Start parsing

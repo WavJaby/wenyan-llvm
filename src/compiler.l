@@ -142,12 +142,7 @@ EXCLUDE_QUO {ASCII}|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{
 [ \t]+        {}
 \r?\n         { yycolumn = yycolumnUtf8 = 0; }
 
-<<EOF>>     { 
-                static int once = 0;
-                if (once++) {
-                    yyterminate();
-                }
-            }
+<<EOF>>     { yyterminate(); }
 
 . {
     if(!unregChar) unregChar = true;

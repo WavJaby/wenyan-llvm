@@ -38,8 +38,7 @@ typedef struct {
     ObjectType type;
     char* name;
     int32_t index;
-    int64_t addr;
-    int32_t lineno;
+    bool expCache;
 } SymbolData;
 
 typedef struct {

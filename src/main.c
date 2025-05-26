@@ -85,6 +85,18 @@ const char* objectType2strFormat[] = {
     [OBJECT_TYPE_I64] = "%lld",
     [OBJECT_TYPE_F64] = "%.16g",
 };
+const char* objectType2str[] = {
+    [OBJECT_TYPE_I32] = "全數",
+    [OBJECT_TYPE_I64] = "長數",
+    [OBJECT_TYPE_F64] = "浮數",
+    [OBJECT_TYPE_STR] = "字串",
+    [OBJECT_TYPE_IDENT] = "識名",
+    [OBJECT_TYPE_UNDEFINED] = "無定",
+};
+const char* symbolPrefix[] = {
+    [false] = "var",
+    [true] = "exp",
+};
 
 int constStrCount = 0;
 int loopLabelCount = 0;
@@ -150,26 +162,26 @@ Object object_findIdentByName(char* name) {
 bool code_stdoutPrint(Object* obj, bool newLine) {
     if (obj->type == OBJECT_TYPE_IDENT) {
         // Print variable
-        const SymbolData* identObj = obj->symbol;
-        printf("GET IDENT: %s\n", identObj->name);
+        const SymbolData* symbol = obj->symbol;
+        printf("GET IDENT: %s\n", symbol->name);
 
         const char* typeFormat;
         // Load variable value
-        switch (identObj->type) {
+        switch (symbol->type) {
         case OBJECT_TYPE_I64:
         case OBJECT_TYPE_I32:
         case OBJECT_TYPE_F64:
-            typeFormat = objectType2strFormat[identObj->type];
+            typeFormat = objectType2strFormat[symbol->type];
             byteBufferWriteFormat(&constBuff,
                                   "@.str.%d = private unnamed_addr constant [%d x i8] c\"%s%s\"\n",
                                   constStrCount, 2 + newLine + 1, typeFormat, newLine ? "\\0A\\00" : "\\00");
 
-            const char* typeName = objectType2llvmType[identObj->type];
+            const char* typeName = objectType2llvmType[symbol->type];
 
-            buffPrintln(&mainFunBuff, "%val.%d = load %s, %s* %var.%d\n",
-                        identObj->index, typeName, typeName, identObj->index);
-            buffPrintln(&mainFunBuff, "call i32 @printf(ptr @.str.%d, %s %val.%d)\n",
-                        constStrCount, typeName, identObj->index);
+            buffPrintln(&mainFunBuff, "%val.%d = load %s, %s* %%%s.%d",
+                        symbol->index, typeName, typeName, symbolPrefix[symbol->expCache], symbol->index);
+            buffPrintln(&mainFunBuff, "call i32 @printf(ptr @.str.%d, %s %val.%d)",
+                        constStrCount, typeName, symbol->index);
             constStrCount++;
             break;
         default:
@@ -188,8 +200,7 @@ bool code_stdoutPrint(Object* obj, bool newLine) {
 
         byteBufferWriteStr(&constBuff, "\\00\"\n");
 
-        buffPrintln(&mainFunBuff, "call i32 @printf(ptr @.str.%d)\n",
-                    constStrCount);
+        buffPrintln(&mainFunBuff, "call i32 @printf(ptr @.str.%d)", constStrCount);
 
         constStrCount++;
         freeObjectData(obj);
@@ -217,10 +228,8 @@ bool code_createVariable(Object* src, char* variable) {
         char* valueStr = sciToStr(src->number);
 
         const char* typeName = objectType2llvmType[src->type];
-        buffPrintln(&mainFunBuff, "%var.%d = alloca %s\n",
-                    symbol->index, typeName);
-        buffPrintln(&mainFunBuff, "store %s %s, %s* %var.%d\n",
-                    typeName, valueStr, typeName, symbol->index);
+        buffPrintln(&mainFunBuff, "%var.%d = alloca %s", symbol->index, typeName);
+        buffPrintln(&mainFunBuff, "store %s %s, %s* %var.%d", typeName, valueStr, typeName, symbol->index);
         free(valueStr);
 
         free(variable);
@@ -233,11 +242,10 @@ bool code_createVariable(Object* src, char* variable) {
     }
 }
 
-bool code_assign(char* variable, Object* src) {
-    Object dest = object_findIdentByName(variable);
-    if (dest.type == OBJECT_TYPE_UNDEFINED) {
-        yyerrorf("「%s」未宣，無由識之\n", variable);
-        free(variable);
+bool code_assign(Object* dest, Object* src) {
+    if (dest->type != OBJECT_TYPE_IDENT || src->type == OBJECT_TYPE_UNDEFINED) {
+        yyerrorf("遭遇不可生之謬誤。\n");
+        freeObjectData(dest);
         freeObjectData(src);
         return true;
     }
@@ -248,8 +256,8 @@ bool code_assign(char* variable, Object* src) {
     case OBJECT_TYPE_I32:
     case OBJECT_TYPE_I64:
     case OBJECT_TYPE_F64:
-        if (dest.symbol->type != src->type) {
-            yyerrorf("的之類屬，與源『%s』之類相左\n", dest.symbol->name);
+        if (dest->symbol->type != src->type) {
+            yyerrorf("的之類屬，與源『%s』之類相左\n", dest->symbol->name);
             failed = true;
             break;
         }
@@ -257,22 +265,23 @@ bool code_assign(char* variable, Object* src) {
         llvmType = objectType2llvmType[src->type];
 
         char* num = sciToStr(src->number);
-        buffPrintln(&mainFunBuff, "store %s %s, ptr %%var.%d", llvmType, num, variableCacheCount);
+        buffPrintln(&mainFunBuff, "store %s %s, ptr %%%d.%d", llvmType, num,
+                    symbolPrefix[src->symbol->expCache], dest->symbol->index);
         free(num);
         ++variableCacheCount;
         break;
     case OBJECT_TYPE_IDENT:
-        if (dest.symbol->type != src->symbol->type) {
-            yyerrorf("源『%s』之類屬，與的『%s』之類相左\n", dest.symbol->name, src->symbol->name);
+        if (dest->symbol->type != src->symbol->type) {
+            yyerrorf("源『%s』之類屬，與的『%s』之類相左\n", dest->symbol->name, src->symbol->name);
             failed = true;
             break;
         }
 
-        llvmType = objectType2llvmType[dest.symbol->type];
-        buffPrintln(&mainFunBuff, "%%cache.%d = load %s, ptr %%var.%d",
-                    variableCacheCount, llvmType, src->symbol->index);
-        buffPrintln(&mainFunBuff, "store %s %%cache.%d, ptr %%var.%d",
-                    llvmType, variableCacheCount, dest.symbol->index);
+        llvmType = objectType2llvmType[dest->symbol->type];
+        buffPrintln(&mainFunBuff, "%%cache.%d = load %s, ptr %%%s.%d",
+                    variableCacheCount, llvmType, symbolPrefix[src->symbol->expCache], src->symbol->index);
+        buffPrintln(&mainFunBuff, "store %s %%cache.%d, ptr %%%s.%d",
+                    llvmType, variableCacheCount, symbolPrefix[dest->symbol->expCache], dest->symbol->index);
         ++variableCacheCount;
         break;
     default:
@@ -280,10 +289,110 @@ bool code_assign(char* variable, Object* src) {
         break;
     }
 
-    free(variable);
-    freeObjectData(&dest);
+    freeObjectData(dest);
     freeObjectData(src);
     return failed;
+}
+
+ObjectType getObjectType(const Object* obj) {
+    if (obj->type == OBJECT_TYPE_IDENT)
+        return obj->symbol->type;
+    return obj->type;
+}
+
+void createExpressionObjectCache(Object* src, Object* out) {
+    if (src->type == OBJECT_TYPE_IDENT) {
+        *out = (Object){.type = OBJECT_TYPE_IDENT, .symbol = cloneStruct(SymbolData, src->symbol)};
+        return;
+    }
+
+    const char* typeName;
+    SymbolData* symbol;
+    switch (src->type) {
+    case OBJECT_TYPE_I32:
+    case OBJECT_TYPE_I64:
+    case OBJECT_TYPE_F64:
+        typeName = objectType2llvmType[src->type];
+        symbol = malloc(sizeof(SymbolData));
+        *out = (Object){.type = OBJECT_TYPE_IDENT, .symbol = symbol};
+        char* name = strdup("exp");
+        *symbol = (SymbolData){.type = src->type, .name = name, .index = variableCacheCount, .expCache = true};
+
+        char* valueStr = sciToStr(src->number);
+        buffPrintln(&mainFunBuff, "%%exp.%d = alloca %s", symbol->index, typeName);
+        buffPrintln(&mainFunBuff, "store %s %s, %s* %%exp.%d", typeName, valueStr, typeName, symbol->index);
+        free(valueStr);
+
+        ++variableCacheCount;
+        return;
+    default:
+        *out = (Object){.type = OBJECT_TYPE_UNDEFINED};
+    }
+}
+
+Object code_expression(char op, bool op_left, Object* a, Object* b) {
+    const ObjectType aType = getObjectType(a), bType = getObjectType(b);
+
+    boolean failed = false;
+    if (aType != bType) {
+        yyerrorf("左類『%s』，與右類『%s』相左\n", objectType2str[aType], objectType2str[bType]);
+        failed = true;
+    }
+
+    Object aCache, bCache;
+    createExpressionObjectCache(a, &aCache);
+    createExpressionObjectCache(b, &bCache);
+    if (aCache.type == OBJECT_TYPE_UNDEFINED || bCache.type == OBJECT_TYPE_UNDEFINED)
+        failed = true;
+
+
+    Object result;
+
+    switch (op) {
+    case '+':
+        if (aType == OBJECT_TYPE_I32 || aType == OBJECT_TYPE_I64 || aType == OBJECT_TYPE_F64) {
+            const ObjectType type = aType;
+            const char* typeName = objectType2llvmType[type];
+            const SymbolData *aSymbol = op_left ? bCache.symbol : aCache.symbol,
+                             *bSymbol = op_left ? aCache.symbol : bCache.symbol;
+
+            SymbolData* symbol = malloc(sizeof(SymbolData));
+            result = (Object){.type = OBJECT_TYPE_IDENT, .symbol = symbol};
+            char* name = strdup("exp");
+            *symbol = (SymbolData){.type = type, .name = name, .index = variableCacheCount, .expCache = true};
+
+            buffPrintln(&mainFunBuff, "%%%s.%d.val = load %s, ptr %%%s.%d",
+                        symbolPrefix[aSymbol->expCache], aSymbol->index, typeName,
+                        symbolPrefix[aSymbol->expCache], aSymbol->index);
+            buffPrintln(&mainFunBuff, "%%%s.%d.val = load %s, ptr %%%s.%d",
+                        symbolPrefix[bSymbol->expCache], bSymbol->index, typeName,
+                        symbolPrefix[bSymbol->expCache], bSymbol->index);
+            buffPrintln(&mainFunBuff, "%%exp.%d.val = add nsw %s %%%s.%d.val, %%%s.%d.val",
+                        variableCacheCount, typeName,
+                        symbolPrefix[aSymbol->expCache], aSymbol->index,
+                        symbolPrefix[bSymbol->expCache], bSymbol->index);
+
+            
+            buffPrintln(&mainFunBuff, "%%exp.%d = alloca %s", symbol->index, typeName);
+            buffPrintln(&mainFunBuff, "store %s %%exp.%d.val, %s* %%exp.%d", typeName, symbol->index, typeName, symbol->index);
+            
+            freeObjectData(&aCache);
+            freeObjectData(&bCache);
+
+            ++variableCacheCount;
+        } else
+            failed = true;
+        break;
+    default:
+        failed = true;
+        break;
+    }
+
+    freeObjectData(a);
+    freeObjectData(b);
+    if (failed)
+        return (Object){.type = OBJECT_TYPE_UNDEFINED};
+    return result;
 }
 
 bool code_forLoop(Object* obj) {

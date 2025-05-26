@@ -13,7 +13,9 @@ Object object_findIdentByName(char* name);
 
 bool code_stdoutPrint(Object* obj, bool newLine);
 bool code_createVariable(Object* src, char* variable);
-bool code_assign(char* variable, Object* src);
+bool code_assign(Object* dest, Object* src);
+Object code_expression(char op, bool op_left, Object* a, Object* b);
+
 bool code_forLoop(Object* obj);
 bool code_forLoopEnd(Object* obj);
 

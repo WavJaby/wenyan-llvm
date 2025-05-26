@@ -116,9 +116,17 @@ EXCLUDE_QUO {ASCII}|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{
 
 "云云" { return END_BRACKET; printf("END_BRACKET\n"); }
 
+"加" { yylval.exp_op = '+'; return EXP_OPERATION; }
+"減" { yylval.exp_op = '-'; return EXP_OPERATION; }
+"乘" { yylval.exp_op = '*'; return EXP_OPERATION; }
+"除" { yylval.exp_op = '/'; return EXP_OPERATION; }
+"於" { yylval.exp_left = true; return EXP_PREPOSITION; }
+"以" { yylval.exp_left = false; return EXP_PREPOSITION; }
+
 "昔之" { return PAST; } 
 "者" { return VARIABLE; }
 "今" { return ASSIGN; }
+"其" { return THAT; }
 "是矣" { return TO_IT; }
 
 "為是" { return FOR; }

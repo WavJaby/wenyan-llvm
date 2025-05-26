@@ -19,7 +19,7 @@
 
     Object obj_val;
     
-    bool op_dir;
+    bool exp_left;
     char exp_op;
     // LinkList<Object*>
     // LinkedList* array_subscript;
@@ -28,7 +28,10 @@
 %token PRINT
 %token HERE_ARE HERE_IS_A VALUE CALLED
 %token FOR TIMES END_BRACKET
-%token PAST VARIABLE ASSIGN TO_IT
+%token PAST VARIABLE ASSIGN THAT TO_IT
+%token PREPOSITION_LEFT PREPOSITION_RIGHT
+%token <exp_op> EXP_OPERATION
+%token <exp_left> EXP_PREPOSITION
 
 %token <var_type> VAR_TYPE
 %token <b_var> BOOL_LIT
@@ -85,7 +88,8 @@ OperationStmt
     : DefineStmt { code_stdoutPrint(&$<obj_val>1, true); } PRINT
     | ExpressionStmt { code_stdoutPrint(&$<obj_val>1, true); } PRINT
     | DefineStmt CALLED IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); }
-    | PAST IdentStmt VARIABLE ASSIGN ExpressionStmt { if (code_assign($<s_var>2, &$<obj_val>5)) YYABORT; } TO_IT
+    | PAST IdentStmt VARIABLE ASSIGN ExpressionStmt { if (code_assign(&$<obj_val>2, &$<obj_val>5)) YYABORT; } TO_IT
+    | ExpressionStmt PAST IdentStmt { if (code_assign(&$<obj_val>3, &$<obj_val>1)) YYABORT; } VARIABLE ASSIGN THAT TO_IT
 ;
 
 DefineStmt
@@ -95,6 +99,8 @@ DefineStmt
 
 ExpressionStmt
     : ValueStmt { $$ = $<obj_val>1; }
+    | EXP_OPERATION ExpressionStmt EXP_PREPOSITION ExpressionStmt 
+        { $$ = code_expression($<exp_op>1, $<exp_left>3, &$<obj_val>2, &$<obj_val>4); }
 ;
 
 

@@ -101,9 +101,9 @@ EXCLUDE_QUO {ASCII}|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{
 %%
 
 "/*"                        { BEGIN(CMT_CON); }
+<CMT_CON>"*/"               { BEGIN(INITIAL); }
 <CMT_CON>.+                 {}
 <CMT_CON>\r?\n              { yycolumn = yycolumnUtf8 = 0; }
-<CMT_CON>"*/"               { BEGIN(INITIAL); }
 "//".*                      {}
 
 "「「"        { BEGIN(STR_CON); strLastTokenLen = 0; }
@@ -113,12 +113,6 @@ EXCLUDE_QUO {ASCII}|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{
 "「"        { BEGIN(IDENT_CON); }
 <IDENT_CON>"」"    { BEGIN(INITIAL); }
 <IDENT_CON>{EXCLUDE_QUO}+    { yylval.s_var = strdup(yytext); return IDENT; }
-
-{digit}+    {
-    if (chineseToArabic(yytext, &yylval.n_var))
-        yyterminate();
-    return NUMBER_LIT;
-}
 
 "云云" { return END_BRACKET; printf("END_BRACKET\n"); }
 
@@ -132,7 +126,7 @@ EXCLUDE_QUO {ASCII}|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{
 
 "有數" { return IMMEDIATE_NUMBER_IS; }
 
-"吾有" { return IMMEDIATE; }
+{digit}+ { chineseToArabic(yytext, &yylval.n_var); return NUMBER_LIT; }
 
 "一言" { return STRING; }
 "一數" { return NUMBER; }

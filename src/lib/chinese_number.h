@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 typedef enum {
+    ERROR,
     I32,
     I64,
     F64,

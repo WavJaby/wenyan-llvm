@@ -195,7 +195,9 @@ static NumberToken* tokenize(const char32_t* code, size_t len, size_t* token_cou
     for (size_t i = 0; i < len; ++i) {
         const NumberToken t = lookup_token(code[i]);
         if (t.type == TOKEN_TYPE_UNKNOWN) {
+#ifdef VERBOSE
             fprintf(stderr, "Error: Unknown character U+%04X in input.\n", code[i]);
+#endif
             free(tokens);
             return NULL; // Error on unknown character
         }
@@ -412,7 +414,9 @@ static ParseResult* parse_tokens(const NumberToken* tokens, size_t token_count) 
             // Check if this is the first significant token (immediately after BEGIN)
             if (i != 2) {
                 // Sign not immediately after BEGIN
+#ifdef VERBOSE
                 fprintf(stderr, "Error: Sign '負' not at the beginning.\n");
+#endif
                 goto parse_error;
             }
         }
@@ -560,7 +564,9 @@ static ParseResult* parse_tokens(const NumberToken* tokens, size_t token_count) 
         case TOKEN_TYPE_SIGN:
             if (digit_state == DIGIT_STATE_MULT) {
                 // E.g., <BEGIN>微 is invalid
+#ifdef VERBOSE
                 fprintf(stderr, "Error: Dangling multiplier at the beginning.\n");
+#endif
                 goto parse_error;
             }
             if (!mult_stack_mark_done(&stack)) goto parse_error;
@@ -584,7 +590,9 @@ static ParseResult* parse_tokens(const NumberToken* tokens, size_t token_count) 
         case TOKEN_TYPE_DELIM: // 又 / 有
             if (digit_state == DIGIT_STATE_DELIM) {
                 // 又又 is invalid
+#ifdef VERBOSE
                 fprintf(stderr, "Error: Consecutive delimiters '又'/'有'.\n");
+#endif
                 goto parse_error;
             }
             // Delimiter acts like a reset for exponents, similar to decimal point
@@ -596,7 +604,9 @@ static ParseResult* parse_tokens(const NumberToken* tokens, size_t token_count) 
         case TOKEN_TYPE_FRAC_MULT: // 分, 釐, ...
             if (digit_state == DIGIT_STATE_MULT) {
                 // e.g. 微分 is invalid
+#ifdef VERBOSE
                 fprintf(stderr, "Error: Consecutive fractional multipliers or decimal point.\n");
+#endif
                 goto parse_error;
             }
             mult_stack_clear(&stack);
@@ -636,7 +646,9 @@ static ParseResult* parse_tokens(const NumberToken* tokens, size_t token_count) 
 
         // if (current_exp < result->exp) {
         //     // Exponents should never go backwards
+#ifdef VERBOSE
         //     fprintf(stderr, "Error: Exponents should never go backwards.\n");
+#endif
         //     goto parse_error;
         // }
 
@@ -671,8 +683,10 @@ static ParseResult* parse_tokens(const NumberToken* tokens, size_t token_count) 
             }
 
             if (!allow_fill) {
+#ifdef VERBOSE
                 fprintf(stderr, "Error: Missing units between digits (gap %d -> %d).\n",
-                        result->exp + (int)result->count, current_exp);
+                    result->exp + (int)result->count, current_exp);
+#endif
                 goto parse_error;
             }
 
@@ -759,13 +773,17 @@ static ParseResult* parse_tokens(const NumberToken* tokens, size_t token_count) 
 
         // if (digit_state == DIGIT_STATE_ZERO && token->type == TOKEN_TYPE_INT_MULT && i > 1 &&
         //     tokens[i - 2].type == TOKEN_TYPE_DIGIT) {
+#ifdef VERBOSE
         //     fprintf(stderr, "Error: Invalid zero sequence (e.g., '一千零五百').\n");
+#endif
         //     goto parse_error;
         // }
     } // End main parsing loop
 
     if (result->count == 0) {
+#ifdef VERBOSE
         fprintf(stderr, "Error: No digits found in input.\n");
+#endif
         goto parse_error; // Valid numbers must have digits
     }
 
@@ -808,8 +826,8 @@ bool safe_x10d(uint64_t* value) {
     return false;
 }
 
-bool result_to_sci(const ParseResult* result, ScientificNotation* sciOut) {
-    if (!result || result->count == 0) return true;
+void result_to_sci(const ParseResult* result, ScientificNotation* sciOut) {
+    if (!result || result->count == 0) return;
     int exp = result->exp;
     int count = result->count;
     uint8_t* digits = result->digits;
@@ -880,7 +898,7 @@ bool result_to_sci(const ParseResult* result, ScientificNotation* sciOut) {
 
             const int64_t intValue = isNegative ? -(int64_t)fraction : (int64_t)fraction;
             *sciOut = (ScientificNotation){isInt ? I32 : I64, intValue, fractionLen, exp};
-            return false;
+            return;
         }
     }
 
@@ -906,7 +924,6 @@ bool result_to_sci(const ParseResult* result, ScientificNotation* sciOut) {
     // printf("double %s\n", value_str);
     const int64_t fractionValue = isNegative ? -(int64_t)fraction : (int64_t)fraction;
     *sciOut = (ScientificNotation){F64, fractionValue, fractionLen, exp};
-    return false;
 }
 
 char* sciToStr(const ScientificNotation* sci) {
@@ -1000,11 +1017,15 @@ bool chineseToArabic(const char* utf8, ScientificNotation* sciOut) {
 
     // Convert UTF8 to UTF32
     if ((len = utf8_to_u32(utf8, &code)) < 0) {
+#ifdef VERBOSE
         fprintf(stderr, "Error: Invalid UTF-8 input.\n");
+#endif
+        sciOut->type = ERROR;
         return true;
     }
     if (len == 0) {
         free(code);
+        sciOut->type = ERROR;
         return true;
     }
 
@@ -1013,20 +1034,22 @@ bool chineseToArabic(const char* utf8, ScientificNotation* sciOut) {
     free(code); // Free UTF32 buffer now
     if (!tokens) {
         // Error message printed by tokenize
+        sciOut->type = ERROR;
         return true;
     }
 
     // Parse the tokens
     ParseResult* result = parse_tokens(tokens, token_count);
     free(tokens); // Free token array now
-    if (!result) {
+    if (!result || result->count == 0) {
         // Error message printed by parse_tokens
+        sciOut->type = ERROR;
         return true;
     }
 
-    boolean error = result_to_sci(result, sciOut);
+    result_to_sci(result, sciOut);
     result_free(result); // Free ParseResult internal arrays
     free(result); // Free ParseResult struct itself
 
-    return error;
+    return false;
 }

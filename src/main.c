@@ -124,6 +124,11 @@ Object object_createStr(char* str) {
 }
 
 Object object_createNumber(const ScientificNotation* number) {
+    if (number->type == ERROR) {
+        yyerrorf("數值莫能辨析\n");
+        return (Object){OBJECT_TYPE_UNDEFINED};
+    }
+
     char* str = sciToStr(number);
     printf("NUMBER %s\n", str);
     free(str);

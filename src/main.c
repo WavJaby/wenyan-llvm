@@ -542,11 +542,15 @@ int main(int argc, char* argv[]) {
     byteBufferWriteToFile(&constBuff, yyout);
     codeRaw("");
     codeRaw("define i32 @main() {");
+#ifdef WIN32
     codeRaw("call void @utf8_init()");
+#endif
+    
     byteBufferWriteToFile(&mainFunBuff, yyout);
     codeRaw("    ret i32 0");
     codeRaw("}");
 
+#ifdef WIN32
     codeRaw("");
     codeRaw("define dso_local void @utf8_init() {\n"
         "%%1 = call i32 @_setmode(i32 0, i32 32768)\n"
@@ -557,10 +561,11 @@ int main(int argc, char* argv[]) {
         "}");
 
     codeRaw("");
-    codeRaw("declare i32 @printf(i8*, ...)");
     codeRaw("declare dllimport i32 @_setmode(i32, i32)");
     codeRaw("declare dllimport i32 @SetConsoleCP(i32)");
     codeRaw("declare dllimport i32 @SetConsoleOutputCP(i32)");
+#endif
+    codeRaw("declare i32 @printf(i8*, ...)");
 
 
     printf("\nTotal lines: %d\n", yylineno);

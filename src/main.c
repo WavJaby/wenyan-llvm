@@ -88,6 +88,7 @@ const char* objectType2strFormat[] = {
 
 int constStrCount = 0;
 int loopLabelCount = 0;
+int variableCacheCount = 0;
 
 void pushScope() {
     printf("> (scope level %d)\n", ++scopeLevel);
@@ -225,6 +226,59 @@ bool code_createVariable(Object* src, char* variable) {
         freeObjectData(src);
         return true;
     }
+}
+
+bool code_assign(char* variable, Object* src) {
+    Object dest = object_findIdentByName(variable);
+    if (dest.type == OBJECT_TYPE_UNDEFINED) {
+        yyerrorf("「%s」未宣，無由識之\n", variable);
+        free(variable);
+        freeObjectData(src);
+        return true;
+    }
+
+    const char* llvmType;
+    boolean failed = false;
+    switch (src->type) {
+    case OBJECT_TYPE_I32:
+    case OBJECT_TYPE_I64:
+    case OBJECT_TYPE_F64:
+        if (dest.symbol->type != src->type) {
+            yyerrorf("的之類屬，與源『%s』之類相左\n", dest.symbol->name);
+            failed = true;
+            break;
+        }
+
+        llvmType = objectType2llvmType[src->type];
+
+        char* num = sciToStr(src->number);
+        buffPrintln(&mainFunBuff, "store %s %s, ptr %%var.%d", llvmType, num, variableCacheCount);
+        free(num);
+        ++variableCacheCount;
+        break;
+    case OBJECT_TYPE_IDENT:
+        if (dest.symbol->type != src->symbol->type) {
+            yyerrorf("源『%s』之類屬，與的『%s』之類相左\n", dest.symbol->name, src->symbol->name);
+            failed = true;
+            break;
+        }
+
+        llvmType = objectType2llvmType[dest.symbol->type];
+        buffPrintln(&mainFunBuff, "%%cache.%d = load %s, ptr %%var.%d",
+                    variableCacheCount, llvmType, src->symbol->index);
+        buffPrintln(&mainFunBuff, "store %s %%cache.%d, ptr %%var.%d",
+                    llvmType, variableCacheCount, dest.symbol->index);
+        ++variableCacheCount;
+        break;
+    default:
+        failed = true;
+        break;
+    }
+
+    free(variable);
+    freeObjectData(&dest);
+    freeObjectData(src);
+    return failed;
 }
 
 bool code_forLoop(Object* obj) {

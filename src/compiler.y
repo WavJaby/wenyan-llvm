@@ -84,6 +84,7 @@ ConditionStmt
 OperationStmt
     : DefineStmt { code_stdoutPrint(&$<obj_val>1, true); } PRINT
     | DefineStmt AS IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); }
+    | PAST IDENT VARIABLE ASSIGN ExpressionStmt { if (code_assign($<s_var>2, &$<obj_val>5)) YYABORT; } TO_IT
 ;
 
 DefineStmt

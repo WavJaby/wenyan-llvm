@@ -120,7 +120,12 @@ EXCLUDE_QUO {ASCII}|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{
     return NUMBER_LIT;
 }
 
-"云云" { return END_BRACKET; }
+"云云" { return END_BRACKET; printf("END_BRACKET\n"); }
+
+"昔之" { return PAST; } 
+"者" { return VARIABLE; }
+"今" { return ASSIGN; }
+"是矣" { return TO_IT; }
 
 "為是" { return FOR; }
 "遍" { return TIMES; }

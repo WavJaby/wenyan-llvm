@@ -14,25 +14,24 @@
     ObjectType var_type;
 
     bool b_var;
-    char c_var;
     ScientificNotation n_var;
     char *s_var;
 
     Object obj_val;
-
+    
+    bool op_dir;
+    char exp_op;
     // LinkList<Object*>
     // LinkedList* array_subscript;
 }
-/* Token without return */
+/* Token */
 %token PRINT
-%token IMMEDIATE IS AS NUMBER STRING IMMEDIATE_NUMBER_IS
+%token HERE_ARE HERE_IS_A VALUE CALLED
 %token FOR TIMES END_BRACKET
 %token PAST VARIABLE ASSIGN TO_IT
 
-/* Token with return, which need to sepcify type */
-%token <var_type> VARIABLE_T
+%token <var_type> VAR_TYPE
 %token <b_var> BOOL_LIT
-%token <c_var> CHAR_LIT
 %token <n_var> NUMBER_LIT
 %token <s_var> STR_LIT
 %token <s_var> IDENT
@@ -41,6 +40,7 @@
 %type <obj_val> DefineStmt
 %type <obj_val> ExpressionStmt
 %type <obj_val> ValueStmt
+%type <obj_val> IdentStmt
 
 %nonassoc THEN
 %nonassoc ELSE
@@ -83,14 +83,14 @@ ConditionStmt
 
 OperationStmt
     : DefineStmt { code_stdoutPrint(&$<obj_val>1, true); } PRINT
-    | DefineStmt AS IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); }
-    | PAST IDENT VARIABLE ASSIGN ExpressionStmt { if (code_assign($<s_var>2, &$<obj_val>5)) YYABORT; } TO_IT
+    | ExpressionStmt { code_stdoutPrint(&$<obj_val>1, true); } PRINT
+    | DefineStmt CALLED IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); }
+    | PAST IdentStmt VARIABLE ASSIGN ExpressionStmt { if (code_assign($<s_var>2, &$<obj_val>5)) YYABORT; } TO_IT
 ;
 
 DefineStmt
-    : IMMEDIATE STRING IS ExpressionStmt { $$ = $<obj_val>4; }
-    | IMMEDIATE NUMBER IS ExpressionStmt { $$ = $<obj_val>4; }
-    | IMMEDIATE_NUMBER_IS ExpressionStmt { $$ = $<obj_val>2; }
+    : HERE_ARE NUMBER_LIT VAR_TYPE VALUE ExpressionStmt { $$ = $<obj_val>5; }
+    | HERE_IS_A VAR_TYPE ExpressionStmt { $$ = $<obj_val>3; }
 ;
 
 ExpressionStmt
@@ -101,8 +101,12 @@ ExpressionStmt
 /* Value */
 ValueStmt
     : STR_LIT { $$ = object_createStr($<s_var>1); }
-    | NUMBER_LIT { $$ = object_createNumber(&$<n_var>1); }
-    | IDENT { if (($$ = object_findIdentByName($<s_var>1)).type == OBJECT_TYPE_UNDEFINED) YYABORT; }
+    | NUMBER_LIT { if (($$ = object_createNumber(&$<n_var>1)).type == OBJECT_TYPE_UNDEFINED) YYABORT; }
+    | IdentStmt
+;
+
+IdentStmt
+    : IDENT { if (($$ = object_findIdentByName($<s_var>1)).type == OBJECT_TYPE_UNDEFINED) YYABORT; }
 ;
 
 %%
@@ -115,11 +119,10 @@ void yyerror(char const* msg) {
 
 static const char* yysymbolNameCh(yysymbol_kind_t symbol) {
     switch (symbol) {
-        case YYSYMBOL_NUMBER_LIT: return "數值";
-        case YYSYMBOL_STR_LIT: return "字串";
-        case YYSYMBOL_NUMBER: return "『一數』";
-        case YYSYMBOL_STRING: return "『一言』";
-        default: return "未知";
+        case YYSYMBOL_NUMBER_LIT: return " 數值 ";
+        case YYSYMBOL_STR_LIT: return " 字串 ";
+        case YYSYMBOL_VAR_TYPE: return " 類 ";
+        default: return yysymbol_name (symbol);
     }
 }
 

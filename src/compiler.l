@@ -124,15 +124,19 @@ EXCLUDE_QUO {ASCII}|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{
 "為是" { return FOR; }
 "遍" { return TIMES; }
 
-"有數" { return IMMEDIATE_NUMBER_IS; }
+"吾有" { return HERE_ARE; }
+"今有" { return HERE_ARE; }
+"有" { return HERE_IS_A; }
 
 {digit}+ { chineseToArabic(yytext, &yylval.n_var); return NUMBER_LIT; }
 
-"一言" { return STRING; }
-"一數" { return NUMBER; }
+"數" { yylval.var_type = OBJECT_TYPE_NUM; return VAR_TYPE; }
+"列" { yylval.var_type = OBJECT_TYPE_ARRAY; return VAR_TYPE; }
+"言" { yylval.var_type = OBJECT_TYPE_STR; return VAR_TYPE; }
+"爻" { yylval.var_type = OBJECT_TYPE_BOOL; return VAR_TYPE; }
 
-"名之曰" { return AS; }
-"曰" { return IS; }
+"名之曰" { return CALLED; }
+"曰" { return VALUE; }
 
 "書之" { return PRINT; }
 

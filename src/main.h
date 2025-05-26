@@ -12,7 +12,7 @@ Object object_createNumber(const ScientificNotation* number);
 Object object_findIdentByName(char* name);
 
 bool code_stdoutPrint(Object* obj, bool newLine);
-bool code_createVariable(Object* obj, char* name);
+bool code_createVariable(Object* src, char* variable);
 bool code_forLoop(Object* obj);
 bool code_forLoopEnd(Object* obj);
 

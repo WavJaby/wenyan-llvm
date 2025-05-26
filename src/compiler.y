@@ -82,7 +82,7 @@ ConditionStmt
 ;
 
 OperationStmt
-    : DefineStmt PRINT { code_stdoutPrint(&$<obj_val>1, true); }
+    : DefineStmt { code_stdoutPrint(&$<obj_val>1, true); } PRINT
     | DefineStmt AS IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); }
 ;
 

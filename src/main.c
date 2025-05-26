@@ -160,10 +160,10 @@ bool code_stdoutPrint(Object* obj, bool newLine) {
 
             const char* typeName = objectType2llvmType[identObj->type];
 
-            byteBufferWriteFormat(&mainFunBuff, SCOPE_SPACE_FMT "%val.%d = load %s, %s* %var.%d\n",
-                                  SCOPE_SPACE_VAL, identObj->index, typeName, typeName, identObj->index);
-            byteBufferWriteFormat(&mainFunBuff, SCOPE_SPACE_FMT "call i32 @printf(ptr @.str.%d, %s %val.%d)\n",
-                                  SCOPE_SPACE_VAL, constStrCount, typeName, identObj->index);
+            buffPrintln(&mainFunBuff, "%val.%d = load %s, %s* %var.%d\n",
+                        identObj->index, typeName, typeName, identObj->index);
+            buffPrintln(&mainFunBuff, "call i32 @printf(ptr @.str.%d, %s %val.%d)\n",
+                        constStrCount, typeName, identObj->index);
             constStrCount++;
             break;
         default:
@@ -182,8 +182,8 @@ bool code_stdoutPrint(Object* obj, bool newLine) {
 
         byteBufferWriteStr(&constBuff, "\\00\"\n");
 
-        byteBufferWriteFormat(&mainFunBuff, SCOPE_SPACE_FMT "call i32 @printf(ptr @.str.%d)\n",
-                              SCOPE_SPACE_VAL, constStrCount);
+        buffPrintln(&mainFunBuff, "call i32 @printf(ptr @.str.%d)\n",
+                    constStrCount);
 
         constStrCount++;
         freeObjectData(obj);
@@ -195,34 +195,34 @@ bool code_stdoutPrint(Object* obj, bool newLine) {
     return true;
 }
 
-bool code_createVariable(Object* obj, char* name) {
+bool code_createVariable(Object* src, char* variable) {
     Map* currentSymbolMap = scopeList.last->value;
 
     SymbolData* symbol;
-    switch (obj->type) {
+    switch (src->type) {
     case OBJECT_TYPE_I32:
     case OBJECT_TYPE_I64:
     case OBJECT_TYPE_F64:
         // Create symbol
         symbol = malloc(sizeof(SymbolData));
-        *symbol = (SymbolData){.type = obj->type, .name = strdup(name), .index = (int32_t)currentSymbolMap->size};
-        map_putpp(currentSymbolMap, strdup(name), symbol);
+        *symbol = (SymbolData){.type = src->type, .name = strdup(variable), .index = (int32_t)currentSymbolMap->size};
+        map_putpp(currentSymbolMap, strdup(variable), symbol);
 
-        char* valueStr = sciToStr(obj->number);
+        char* valueStr = sciToStr(src->number);
 
-        const char* typeName = objectType2llvmType[obj->type];
-        byteBufferWriteFormat(&mainFunBuff, SCOPE_SPACE_FMT "%var.%d = alloca %s\n",
-                              SCOPE_SPACE_VAL, symbol->index, typeName);
-        byteBufferWriteFormat(&mainFunBuff, SCOPE_SPACE_FMT "store %s %s, %s* %var.%d\n",
-                              SCOPE_SPACE_VAL, typeName, valueStr, typeName, symbol->index);
+        const char* typeName = objectType2llvmType[src->type];
+        buffPrintln(&mainFunBuff, "%var.%d = alloca %s\n",
+                    symbol->index, typeName);
+        buffPrintln(&mainFunBuff, "store %s %s, %s* %var.%d\n",
+                    typeName, valueStr, typeName, symbol->index);
         free(valueStr);
 
-        free(name);
-        freeObjectData(obj);
+        free(variable);
+        freeObjectData(src);
         return false;
     default:
-        free(name);
-        freeObjectData(obj);
+        free(variable);
+        freeObjectData(src);
         return true;
     }
 }
@@ -328,7 +328,7 @@ int main(int argc, char* argv[]) {
     } else if (argc == 2) {
         yyin = fopen(inputFilePath = argv[1], "rb");
         yyout = stdout;
-    } else if (argc == 1){
+    } else if (argc == 1) {
         yyin = stdin;
         yyout = stdout;
         printf("===== Use stdin for parsing =====");

@@ -251,7 +251,7 @@ bool code_assign(Object* dest, Object* src) {
     }
 
     const char* llvmType;
-    boolean failed = false;
+    bool failed = false;
     switch (src->type) {
     case OBJECT_TYPE_I32:
     case OBJECT_TYPE_I64:
@@ -333,7 +333,7 @@ void createExpressionObjectCache(Object* src, Object* out) {
 Object code_expression(char op, bool op_left, Object* a, Object* b) {
     const ObjectType aType = getObjectType(a), bType = getObjectType(b);
 
-    boolean failed = false;
+    bool failed = false;
     if (aType != bType) {
         yyerrorf("左類『%s』，與右類『%s』相左\n", objectType2str[aType], objectType2str[bType]);
         failed = true;

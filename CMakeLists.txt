@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.31)
+cmake_minimum_required(VERSION 3.10)
 project(wenyan_llvm C)
 
 find_package(BISON REQUIRED)
@@ -57,10 +57,13 @@ add_executable(
         ${BISON_CompilerParser_OUTPUTS} # generated parser .c file
         ${FLEX_CompilerScanner_OUTPUTS} # generated scanner .c file
 )
+target_link_libraries(main m)
 
 # --- Define Test Executable ---
-add_executable(
-        test
-        ${TEST_DIR}/test.c
-        ${SRC_DIR}/lib/chinese_number.c
-)
+if (EXISTS ${TEST_DIR})
+    add_executable(
+            test
+            ${TEST_DIR}/test.c
+            ${SRC_DIR}/lib/chinese_number.c
+    )
+endif ()

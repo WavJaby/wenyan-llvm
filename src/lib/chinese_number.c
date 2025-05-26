@@ -1,6 +1,5 @@
 #include "chinese_number.h"
 
-#include <bemapiset.h>
 #include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,7 +9,6 @@
 #include <math.h>
 #include <stdbool.h>
 #include <limits.h>
-#include <windows.h>
 
 // Convert from
 // https://github.com/wenyan-lang/wenyan/blob/master/src/converts/hanzi2num.ts

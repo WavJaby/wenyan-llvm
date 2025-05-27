@@ -44,6 +44,8 @@
 /* Nonterminal with return, which need to sepcify type */
 %type <obj_val> DefineStmt
 %type <obj_val> ExpressionStmt
+%type <obj_val> ExpressionOrValueStmt
+%type <obj_val> ExpressionOrDefineStmt
 %type <obj_val> ValueStmt
 %type <obj_val> IdentStmt
 
@@ -83,25 +85,33 @@ BodyStmt
 
 /* Condition and Operation */
 ConditionStmt
-    : FOR ExpressionStmt TIMES { code_forLoop(&$<obj_val>2); } ScopeStmt { code_forLoopEnd(&$<obj_val>2); }
+    : FOR ExpressionOrValueStmt TIMES { code_forLoop(&$<obj_val>2); } ScopeStmt { code_forLoopEnd(&$<obj_val>2); }
 ;
 
 OperationStmt
-    : DefineStmt { code_stdoutPrint(&$<obj_val>1, true); } PRINT
-    | ExpressionStmt { code_stdoutPrint(&$<obj_val>1, true); } PRINT
+    : ExpressionOrDefineStmt { code_stdoutPrint(&$<obj_val>1, true); } PRINT
     | DefineStmt CALLED IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); }
-    | PAST IdentStmt VARIABLE ASSIGN ExpressionStmt { if (code_assign(&$<obj_val>2, &$<obj_val>5)) YYABORT; } TO_IT
+    | PAST IdentStmt VARIABLE ASSIGN ExpressionOrValueStmt { if (code_assign(&$<obj_val>2, &$<obj_val>5)) YYABORT; } TO_IT
     | ExpressionStmt PAST IdentStmt { if (code_assign(&$<obj_val>3, &$<obj_val>1)) YYABORT; } VARIABLE ASSIGN THAT TO_IT
 ;
 
+ExpressionOrDefineStmt
+    : ExpressionStmt
+    | DefineStmt
+;
+
+ExpressionOrValueStmt
+    : ExpressionStmt
+    | ValueStmt
+;
+
 DefineStmt
-    : HERE_ARE NUMBER_LIT VAR_TYPE VALUE ExpressionStmt { $$ = $<obj_val>5; }
-    | HERE_IS_A VAR_TYPE ExpressionStmt { $$ = $<obj_val>3; }
+    : HERE_ARE NUMBER_LIT VAR_TYPE VALUE ExpressionOrValueStmt { $$ = $<obj_val>5; }
+    | HERE_IS_A VAR_TYPE ExpressionOrValueStmt { $$ = $<obj_val>3; }
 ;
 
 ExpressionStmt
-    : ValueStmt { $$ = $<obj_val>1; }
-    | EXP_OPERATION ExpressionStmt EXP_PREPOSITION ExpressionStmt 
+    : EXP_OPERATION ExpressionOrValueStmt EXP_PREPOSITION ExpressionOrValueStmt 
         { $$ = code_expression($<exp_op>1, $<exp_left>3, &$<obj_val>2, &$<obj_val>4); }
 ;
 

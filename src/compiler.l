@@ -1,4 +1,5 @@
 /* Definition section */
+%option yymore
 %{
     #include <utf8.c/utf8.h>
     #include "compiler_util.h"
@@ -89,7 +90,8 @@ B4_3    \xF4[\x80-\x8F]{U}{U}
 ALL_UTF8 {ASCII}|{B2}|{B3_1}|{B3_2}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{B4_3}
 
 B3_2_EXCLUDE_QUO ([\xE1-\xE2]{U}{U})|(\xE3\x80[\x80-\x8C\x8E-\xBF])|(\xE3[\x81-\xBF]{U})|([\xE4-\xEC]{U}{U})
-EXCLUDE_QUO {ASCII}|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{B4_3}
+
+EXCLUDE_QUO [\x20-\x7E]|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{B4_3}
 
 %option yylineno
 %x CMT_CON
@@ -106,15 +108,17 @@ EXCLUDE_QUO {ASCII}|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_2}|{
 <CMT_CON>\r?\n              { yycolumn = yycolumnUtf8 = 0; }
 "//".*                      {}
 
-"「「"        { BEGIN(STR_CON); strLastTokenLen = 0; }
+"「「"    { BEGIN(STR_CON); strLastTokenLen = 0; return STR_BEGIN; }
 <STR_CON>"」"+    { if (checkStringEnd()) { BEGIN(INITIAL); return STR_LIT; } }
+<STR_CON>\r?\n    { BEGIN(INITIAL); return NEWLINE; }
 <STR_CON>{EXCLUDE_QUO}+    { yymore(); strLastTokenLen = yyleng; }
 
 "「"        { BEGIN(IDENT_CON); }
 <IDENT_CON>"」"    { BEGIN(INITIAL); }
+<IDENT_CON>\r?\n    { BEGIN(INITIAL); return NEWLINE; }
 <IDENT_CON>{EXCLUDE_QUO}+    { yylval.s_var = strdup(yytext); return IDENT; }
 
-"云云" { return END_BRACKET; printf("END_BRACKET\n"); }
+"云云" { return END_BRACKET; }
 
 "加" { yylval.exp_op = '+'; return EXP_OPERATION; }
 "減" { yylval.exp_op = '-'; return EXP_OPERATION; }

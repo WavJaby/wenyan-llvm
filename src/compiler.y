@@ -30,6 +30,8 @@
 %token FOR TIMES END_BRACKET
 %token PAST VARIABLE ASSIGN THAT TO_IT
 %token PREPOSITION_LEFT PREPOSITION_RIGHT
+%token NEWLINE STR_BEGIN
+
 %token <exp_op> EXP_OPERATION
 %token <exp_left> EXP_PREPOSITION
 
@@ -106,7 +108,7 @@ ExpressionStmt
 
 /* Value */
 ValueStmt
-    : STR_LIT { $$ = object_createStr($<s_var>1); }
+    : STR_BEGIN STR_LIT { $$ = object_createStr($<s_var>2); }
     | NUMBER_LIT { if (($$ = object_createNumber(&$<n_var>1)).type == OBJECT_TYPE_UNDEFINED) YYABORT; }
     | IdentStmt
 ;

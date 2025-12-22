@@ -183,8 +183,7 @@ static int utf8_to_u32(const char* s, char32_t** out_buf) {
 /* ---------- Tokenizer ---------------------------------------------------- */
 static NumberToken* tokenize(const char32_t* code, size_t len, size_t* token_count) {
     // Allocate space for tokens + BEGIN + END
-    size_t cap = len + 2;
-    NumberToken* tokens = malloc(cap * sizeof(NumberToken));
+    NumberToken* tokens = malloc(len + 2 * sizeof(NumberToken));
     if (!tokens) return NULL;
 
     size_t count = 0;
@@ -198,22 +197,6 @@ static NumberToken* tokenize(const char32_t* code, size_t len, size_t* token_cou
 #endif
             free(tokens);
             return NULL; // Error on unknown character
-        }
-        // Simple dynamic array resize (could optimize)
-        if (count >= cap - 1) {
-            // Need space for current token + END
-            cap = cap > 0 ? cap * 2 : 16; // Grow capacity
-            if (cap < count || cap > SIZE_MAX / sizeof(*tokens)) {
-                // Check overflow
-                free(tokens);
-                return NULL;
-            }
-            NumberToken* next_tokens = realloc(tokens, cap * sizeof(NumberToken));
-            if (!next_tokens) {
-                free(tokens);
-                return NULL;
-            }
-            tokens = next_tokens;
         }
         tokens[count++] = t;
     }
@@ -390,16 +373,13 @@ static void result_reset_exp(ParseResult* result, int new_exp) {
 
 
 /* ---------- Core Parser (based on JS 'parse') --------------------------- */
-static ParseResult* parse_tokens(const NumberToken* tokens, size_t token_count) {
+static uint8_t parse_tokens(const NumberToken* tokens, size_t token_count, ParseResult* result) {
     DigitState digit_state = DIGIT_STATE_NONE;
     MultStack stack;
-    ParseResult* result = malloc(sizeof(ParseResult)); // Allocate result structure
 
     if (!result || !mult_stack_init(&stack) || !result_init(result)) {
-        if (result) result_free(result);
         mult_stack_free(&stack); // Free stack if init failed after result alloc
-        free(result);
-        return NULL;
+        return 1;
     }
 
     // Parse backwards, skipping END token (index token_count - 1)
@@ -787,13 +767,11 @@ static ParseResult* parse_tokens(const NumberToken* tokens, size_t token_count) 
 
     mult_stack_free(&stack);
     result->exp -= result->count; // Adjust exponent to account for removed digits
-    return result;
+    return 0;
 
 parse_error:
     mult_stack_free(&stack);
-    result_free(result);
-    free(result);
-    return NULL;
+    return 1;
 }
 
 /* ---------- Convert ParseResult to double -------------------------------- */
@@ -1037,17 +1015,20 @@ bool chineseToArabic(const char* utf8, ScientificNotation* sciOut) {
     }
 
     // Parse the tokens
-    ParseResult* result = parse_tokens(tokens, token_count);
+    ParseResult* result = malloc(sizeof(ParseResult)); // Allocate result structure
+    const uint8_t error = parse_tokens(tokens, token_count, result);
     free(tokens); // Free token array now
-    if (!result || result->count == 0) {
+    if (!result || error) {
         // Error message printed by parse_tokens
         sciOut->type = ERROR;
+        result_free(result);
+        free(result);
         return true;
     }
 
     result_to_sci(result, sciOut);
-    result_free(result); // Free ParseResult internal arrays
-    free(result); // Free ParseResult struct itself
+    result_free(result);
+    free(result);
 
     return false;
 }

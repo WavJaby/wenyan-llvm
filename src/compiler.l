@@ -149,8 +149,11 @@ EXCLUDE_QUO [\x20-\x7E]|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_
 "言" { yylval.var_type = OBJECT_TYPE_STR; return VAR_TYPE; }
 "爻" { yylval.var_type = OBJECT_TYPE_BOOL; return VAR_TYPE; }
 
-"名之曰" { return CALLED; }
-"曰" { return VALUE; }
+"名之曰" { return NAME_IT; }
+"曰" { return SAID; }
+
+"若" { return IF; }
+"若非" { return ELSE; }
 
 "書之" { return PRINT; }
 

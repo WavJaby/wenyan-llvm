@@ -1,4 +1,7 @@
-﻿#include "main.h"
+﻿#define WJCL_STRING_IMPLEMENTATION
+#define WJCL_HASH_MAP_IMPLEMENTATION
+#define WJCL_LINKED_LIST_IMPLEMENTATION
+#include "main.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,10 +11,7 @@
 #include "compiler_util.h"
 #include "lib/byte_buffer.h"
 
-#define WJCL_STRING_IMPLEMENTATION
 #include "WJCL/string/wjcl_string.h"
-#define WJCL_HASH_MAP_IMPLEMENTATION
-#define WJCL_LINKED_LIST_IMPLEMENTATION
 #include "WJCL/map/wjcl_hash_map.h"
 
 #ifdef _WIN32
@@ -27,7 +27,8 @@ void utf8_init(void) {
     SetConsoleOutputCP(CP_UTF8);
 }
 #else
-utf8_init(void) {}
+utf8_init(void) {
+}
 #endif
 
 #define buffPrintln(buff, format, ...) \
@@ -58,7 +59,12 @@ static const MapNodeInfo symbolMapInfo = {
     WJCL_HASH_MAP_FREE_KEY | WJCL_HASH_MAP_FREE_VALUE
 };
 
-/** LinkedList<Map<@link SymbolData>> */
+typedef struct {
+    /** Map<@link SymbolData> */
+    Map symbolMap;
+} ScopeData;
+
+/** LinkedList<@link ScopeData> */
 LinkedList scopeList = linkedList_create();
 
 typedef struct {
@@ -78,67 +84,121 @@ int constStrCount = 0;
 int loopLabelCount = 0;
 int variableCacheCount = 0;
 
+static void printUnknownError() {
+    yyerrorf("遭遇不可生之謬誤。\n");
+}
+
+void freeObjectData(Object* obj) {
+    if (obj == NULL) return;
+    switch (obj->type) {
+    case OBJECT_TYPE_STR:
+        free(obj->str);
+        obj->str = NULL;
+        break;
+    case OBJECT_TYPE_I32:
+    case OBJECT_TYPE_I64:
+    case OBJECT_TYPE_F64:
+    case OBJECT_TYPE_NUM:
+        free(obj->number);
+        obj->number = NULL;
+        break;
+    case OBJECT_TYPE_IDENT:
+        if (obj->symbol) {
+            // SymbolData's name is managed by symbolMap or manually if it's an expression cache
+            if (obj->symbol->expCache) {
+                free(obj->symbol->name);
+            }
+            free(obj->symbol);
+            obj->symbol = NULL;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 void pushScope() {
     printf("> (scope level %d)\n", ++scopeLevel);
 
-    Map* symbolMap = map_new(symbolMapInfo);
-    linkedList_addp(&scopeList, 0, symbolMap);
+    ScopeData scopeData = (ScopeData){
+        .symbolMap = (Map)map_createFromInfo(symbolMapInfo),
+    };
+    linkedList_addp(&scopeList, true, cloneStruct(ScopeData, &scopeData));
 }
 
 void dumpScope() {
     printf("< (scope level: %d)\n", scopeLevel);
 
-    Map* symbolMap = scopeList.last->value;
-    map_free(symbolMap);
-    free(symbolMap);
+    ScopeData* scopeData = scopeList.head->prev->value;
 
-    linkedList_deleteNode(&scopeList, scopeList.last);
+    map_free(&scopeData->symbolMap);
 
+    linkedList_deleteNode(&scopeList, scopeList.head->prev);
     --scopeLevel;
-}
-
-void freeObjectData(Object* obj) {
-    free(obj->str);
-    obj->str = NULL;
-    free(obj->number);
-    obj->number = NULL;
-    free(obj->symbol);
-    obj->symbol = NULL;
 }
 
 Object object_createStr(char* str) {
     printf("STRING \"%s\"\n", str);
-    return (Object){OBJECT_TYPE_STR, .str = str};
+    return (Object){OBJECT_TYPE_STR, .str = str, .number = NULL, .symbol = NULL};
 }
 
 Object object_createNumber(const ScientificNotation* number) {
     if (number->type == ERROR) {
         yyerrorf("數值莫能辨析\n");
-        return (Object){OBJECT_TYPE_UNDEFINED};
+        return (Object){OBJECT_TYPE_UNDEFINED, .str = NULL, .number = NULL, .symbol = NULL};
     }
 
     char* str = sciToStr(number);
     printf("NUMBER %s\n", str);
     free(str);
 
-    return (Object){numberType2objectType[number->type], .number = cloneStruct(ScientificNotation, number)};
+    return (Object){
+        numberType2objectType[number->type], .str = NULL, .number = cloneStruct(ScientificNotation, number),
+        .symbol = NULL
+    };
 }
 
 Object object_findIdentByName(char* name) {
-    for (LinkedListNode* node = scopeList.last; node; node = node->prev) {
-        Map* symbolMap = node->value;
-        const SymbolData* symbol = map_get(symbolMap, name);
+    linkedList_foreach(&scopeList, node) {
+        ScopeData* scopeData = node->value;
+        const SymbolData* symbol = map_get(&scopeData->symbolMap, name);
         if (symbol)
-            return (Object){OBJECT_TYPE_IDENT, .symbol = cloneStruct(SymbolData, symbol)};
+            return (Object){OBJECT_TYPE_IDENT, .str = NULL, .number = NULL, .symbol = cloneStruct(SymbolData, symbol)};
     }
     yyerrorf("「%s」未宣，無由識之\n", name);
-    return (Object){OBJECT_TYPE_UNDEFINED};
+    return (Object){OBJECT_TYPE_UNDEFINED, .str = NULL, .number = NULL, .symbol = NULL};
 }
 
-bool code_stdoutPrint(Object* obj, bool newLine) {
-    if (obj->type == OBJECT_TYPE_IDENT) {
+bool object_VariableDefineCountCheck(const ScientificNotation* count) {
+    switch (count->type) {
+    case I32:
+        return false;
+
+    case I64:
+    case F64:
+        yyerrorf("批量宣變量，指定之量必為全數\n");
+        return true;
+
+    case ERROR:
+        yyerrorf("數值莫能辨析\n");
+        return true;
+    }
+    return true;
+}
+
+
+bool object_VariableDefineCheck(Object* count) {
+    return false;
+}
+
+bool code_stdoutPrint(ValueData* valueData, bool newLine) {
+    Object* object = object_ValueDataListPop(valueData);
+    
+    printf("PRINT: %p\n", object);
+
+    if (object->type == OBJECT_TYPE_IDENT) {
         // Print variable
-        const SymbolData* symbol = obj->symbol;
+        const SymbolData* symbol = object->symbol;
         printf("GET IDENT: %s\n", symbol->name);
 
         const char* typeFormat;
@@ -154,24 +214,25 @@ bool code_stdoutPrint(Object* obj, bool newLine) {
 
             const char* typeName = objectType2llvmType[symbol->type];
 
-            buffPrintln(&mainFunBuff, "%val.%d = load %s, %s* %%%s.%d",
-                        symbol->index, typeName, typeName, symbolPrefix[symbol->expCache], symbol->index);
-            buffPrintln(&mainFunBuff, "call i32 @printf(ptr @.str.%d, %s %val.%d)",
-                        constStrCount, typeName, symbol->index);
+            buffPrintln(&mainFunBuff, "%%val.%d = load %s, %s* %%%s.%d",
+                        variableCacheCount, typeName, typeName, symbolPrefix[symbol->expCache], symbol->index);
+            buffPrintln(&mainFunBuff, "call i32 @printf(ptr @.str.%d, %s %%val.%d)",
+                        constStrCount, typeName, variableCacheCount);
+            variableCacheCount++;
             constStrCount++;
-            break;
+            freeObjectData(object);
+            return false;
         default:
-            freeObjectData(obj);
-            return true;
+            break;
         }
-    } else if (obj->type == OBJECT_TYPE_STR) {
+    } else if (object->type == OBJECT_TYPE_STR) {
         // Print immediate string
-        const size_t constStrLen = strlen(obj->str);
+        const size_t constStrLen = strlen(object->str);
         byteBufferWriteFormat(&constBuff,
                               "@.str.%d = private unnamed_addr constant [%llu x i8] c\"",
                               constStrCount, constStrLen + newLine + 1);
 
-        byteBufferWriteStrUtf8(&constBuff, obj->str);
+        byteBufferWriteStrUtf8(&constBuff, object->str);
         if (newLine) byteBufferWriteStrUtf8(&constBuff, "\n");
 
         byteBufferWriteStr(&constBuff, "\\00\"\n");
@@ -179,48 +240,54 @@ bool code_stdoutPrint(Object* obj, bool newLine) {
         buffPrintln(&mainFunBuff, "call i32 @printf(ptr @.str.%d)", constStrCount);
 
         constStrCount++;
-        freeObjectData(obj);
+        freeObjectData(object);
         return false;
     }
 
     // Error
-    freeObjectData(obj);
+    freeObjectData(object);
+    yyerrorf("無法印出數值，未支援的類型：%s\n", objectType2str[object->type]);
     return true;
 }
 
-bool code_createVariable(Object* src, char* variable) {
-    Map* currentSymbolMap = scopeList.last->value;
+bool code_createVariable(ValueData* valueData, char* name) {
+    ScopeData* scopeData = scopeList.head->prev->value;
+    Map* currentSymbolMap = &scopeData->symbolMap;
+    Object* object = object_ValueDataListPop(valueData);
+
+    printf("Create variable '%s' with type %d\n", name, object->type);
 
     SymbolData* symbol;
-    switch (src->type) {
+    switch (object->type) {
     case OBJECT_TYPE_I32:
     case OBJECT_TYPE_I64:
     case OBJECT_TYPE_F64:
         // Create symbol
         symbol = malloc(sizeof(SymbolData));
-        *symbol = (SymbolData){.type = src->type, .name = strdup(variable), .index = (int32_t)currentSymbolMap->size};
-        map_putpp(currentSymbolMap, strdup(variable), symbol);
+        *symbol = (SymbolData){.type = object->type, .name = strdup(name), .index = (int32_t)currentSymbolMap->size};
+        map_putpp(currentSymbolMap, strdup(name), symbol);
 
-        char* valueStr = sciToStr(src->number);
+        char* valueStr = sciToStr(object->number);
 
-        const char* typeName = objectType2llvmType[src->type];
+        const char* typeName = objectType2llvmType[object->type];
         buffPrintln(&mainFunBuff, "%var.%d = alloca %s", symbol->index, typeName);
         buffPrintln(&mainFunBuff, "store %s %s, %s* %var.%d", typeName, valueStr, typeName, symbol->index);
         free(valueStr);
 
-        free(variable);
-        freeObjectData(src);
+        free(name);
+        freeObjectData(object);
         return false;
     default:
-        free(variable);
-        freeObjectData(src);
+        free(name);
+        freeObjectData(object);
+        yyerrorf("無法創建變數，未支援的變數類型：%s\n", objectType2str[object->type]);
         return true;
     }
 }
 
 bool code_assign(Object* dest, Object* src) {
     if (dest->type != OBJECT_TYPE_IDENT || src->type == OBJECT_TYPE_UNDEFINED) {
-        yyerrorf("遭遇不可生之謬誤。\n");
+        printUnknownError();
         freeObjectData(dest);
         freeObjectData(src);
         return true;
@@ -278,7 +345,9 @@ ObjectType getObjectType(const Object* obj) {
 
 void createExpressionObjectCache(Object* src, Object* out) {
     if (src->type == OBJECT_TYPE_IDENT) {
-        *out = (Object){.type = OBJECT_TYPE_IDENT, .symbol = cloneStruct(SymbolData, src->symbol)};
+        *out = (Object){
+            .type = OBJECT_TYPE_IDENT, .str = NULL, .number = NULL, .symbol = cloneStruct(SymbolData, src->symbol)
+        };
         return;
     }
 
@@ -290,7 +359,7 @@ void createExpressionObjectCache(Object* src, Object* out) {
     case OBJECT_TYPE_F64:
         typeName = objectType2llvmType[src->type];
         symbol = malloc(sizeof(SymbolData));
-        *out = (Object){.type = OBJECT_TYPE_IDENT, .symbol = symbol};
+        *out = (Object){.type = OBJECT_TYPE_IDENT, .str = NULL, .number = NULL, .symbol = symbol};
         char* name = strdup("exp");
         *symbol = (SymbolData){.type = src->type, .name = name, .index = variableCacheCount, .expCache = true};
 
@@ -302,24 +371,23 @@ void createExpressionObjectCache(Object* src, Object* out) {
         ++variableCacheCount;
         return;
     default:
-        *out = (Object){.type = OBJECT_TYPE_UNDEFINED};
+        *out = (Object){.type = OBJECT_TYPE_UNDEFINED, .str = NULL, .number = NULL, .symbol = NULL};
     }
 }
 
 Object code_expression(char op, bool op_left, Object* a, Object* b) {
     const ObjectType aType = getObjectType(a), bType = getObjectType(b);
 
-    bool failed = false;
     if (aType != bType) {
         yyerrorf("左類『%s』，與右類『%s』相左\n", objectType2str[aType], objectType2str[bType]);
-        failed = true;
+        goto FAILED;
     }
 
     Object aCache, bCache;
     createExpressionObjectCache(a, &aCache);
     createExpressionObjectCache(b, &bCache);
     if (aCache.type == OBJECT_TYPE_UNDEFINED || bCache.type == OBJECT_TYPE_UNDEFINED)
-        failed = true;
+        goto FAILED;
 
 
     Object result;
@@ -332,10 +400,9 @@ Object code_expression(char op, bool op_left, Object* a, Object* b) {
             const SymbolData *aSymbol = op_left ? bCache.symbol : aCache.symbol,
                              *bSymbol = op_left ? aCache.symbol : bCache.symbol;
 
-            SymbolData* symbol = malloc(sizeof(SymbolData));
-            result = (Object){.type = OBJECT_TYPE_IDENT, .symbol = symbol};
+            result = (Object){.type = OBJECT_TYPE_IDENT, .symbol = malloc(sizeof(SymbolData))};
             char* name = strdup("exp");
-            *symbol = (SymbolData){.type = type, .name = name, .index = variableCacheCount, .expCache = true};
+            *result.symbol = (SymbolData){.type = type, .name = name, .index = variableCacheCount, .expCache = true};
 
             buffPrintln(&mainFunBuff, "%%%s.%d.val = load %s, ptr %%%s.%d",
                         symbolPrefix[aSymbol->expCache], aSymbol->index, typeName,
@@ -348,30 +415,36 @@ Object code_expression(char op, bool op_left, Object* a, Object* b) {
                         symbolPrefix[aSymbol->expCache], aSymbol->index,
                         symbolPrefix[bSymbol->expCache], bSymbol->index);
 
-            
-            buffPrintln(&mainFunBuff, "%%exp.%d = alloca %s", symbol->index, typeName);
-            buffPrintln(&mainFunBuff, "store %s %%exp.%d.val, %s* %%exp.%d", typeName, symbol->index, typeName, symbol->index);
-            
+
+            buffPrintln(&mainFunBuff, "%%exp.%d = alloca %s", result.symbol->index, typeName);
+            buffPrintln(&mainFunBuff, "store %s %%exp.%d.val, %s* %%exp.%d",
+                        typeName, result.symbol->index, typeName, result.symbol->index);
+
             freeObjectData(&aCache);
             freeObjectData(&bCache);
 
             ++variableCacheCount;
         } else
-            failed = true;
+            goto FAILED;
         break;
     default:
-        failed = true;
-        break;
+        yyerrorf("Unsupported operation type for code_createVariable");
+        goto FAILED;
     }
 
     freeObjectData(a);
     freeObjectData(b);
-    if (failed)
-        return (Object){.type = OBJECT_TYPE_UNDEFINED};
     return result;
+
+FAILED:
+    freeObjectData(a);
+    freeObjectData(b);
+    return (Object){.type = OBJECT_TYPE_UNDEFINED, .str = NULL, .number = NULL, .symbol = NULL};
 }
 
 bool code_forLoop(Object* obj) {
+    printf("> (for loop)\n");
+
     LoopInfo* loop = malloc(sizeof(LoopInfo));
     loop->i = loopLabelCount++;
     linkedList_addp(&loopLabelList, true, loop);
@@ -430,7 +503,7 @@ bool code_forLoop(Object* obj) {
 
 
 bool code_forLoopEnd(Object* obj) {
-    const LoopInfo* loop = loopLabelList.last->value;
+    const LoopInfo* loop = loopLabelList.head->prev->value;
     const char* llvmType = objectType2llvmType[loop->symbol.type];
 
     buffPrintln(&mainFunBuff, "    br label %%loop%d.update", loop->i);
@@ -442,19 +515,20 @@ bool code_forLoopEnd(Object* obj) {
     buffPrintln(&mainFunBuff, "loop%d.exit:", loop->i);
     buffPrintln(&mainFunBuff, "");
 
-    linkedList_deleteNode(&loopLabelList, loopLabelList.last);
+    linkedList_deleteNode(&loopLabelList, loopLabelList.head->prev);
     freeObjectData(obj);
+    printf("< (for loop end)\n");
     return false;
 }
 
 void freeAll() {
     // Free all scope
     linkedList_foreach(&scopeList, node) {
-        Map* symbolMap = linkedList_nodeVal(Map*, node);
-        map_free(symbolMap);
-        free(symbolMap);
+        const ScopeData* scopeData = node->value;
+        map_free(&scopeData->symbolMap);
     }
     linkedList_free(&scopeList);
+
 
     byteBufferFree(&methodBuff, false);
     byteBufferFree(&constBuff, false);
@@ -464,6 +538,8 @@ void freeAll() {
 
 int main(int argc, char* argv[]) {
     utf8_init();
+    linkedList_init(&scopeList);
+    linkedList_init(&loopLabelList);
 
     char* outputFilePath = NULL;
     if (argc == 3) {
@@ -521,7 +597,7 @@ int main(int argc, char* argv[]) {
 #ifdef WIN32
     codeRaw("call void @utf8_init()");
 #endif
-    
+
     byteBufferWriteToFile(&mainFunBuff, yyout);
     codeRaw("    ret i32 0");
     codeRaw("}");

@@ -20,16 +20,16 @@
     char *s_var;
 
     Object obj_val;
+    ValueData val_data;
+    LinkedList ident_list;
     
     bool exp_left;
     char exp_op;
-    // LinkList<Object*>
-    // LinkedList* array_subscript;
 }
 /* Token */
 %token PRINT
-%token HERE_ARE HERE_IS_A VALUE CALLED
-%token FOR TIMES END_BRACKET
+%token HERE_ARE HERE_IS_A SAID NAME_IT
+%token FOR TIMES END_BRACKET IF
 %token PAST VARIABLE ASSIGN THAT TO_IT
 %token PREPOSITION_LEFT PREPOSITION_RIGHT
 %token NEWLINE STR_BEGIN
@@ -43,17 +43,15 @@
 %token <s_var> STR_LIT
 %token <s_var> IDENT
 
-/* Nonterminal with return, which need to sepcify type */
-%type <obj_val> DefineStmt
+/* Nonterminal with return, which need to specify type */
 %type <obj_val> ExpressionStmt
 %type <obj_val> ExpressionOrValueStmt
-%type <obj_val> ExpressionOrDefineStmt
-%type <obj_val> ValueStmt
-%type <obj_val> IdentStmt
+%type <obj_val> ValueLiteralStmt
+%type <obj_val> VariableStmt
+%type <val_data> CreateValueDataListStmt
 
 %nonassoc THEN
 %nonassoc ELSE
-%nonassoc END_BRACKET
 
 /* Yacc will start at this nonterminal */
 %start Program
@@ -83,6 +81,8 @@ BodyListStmt
 BodyStmt
     : OperationStmt
     | ConditionStmt
+    | IF IDENT THEN BodyStmt
+    | IF IDENT THEN BodyStmt ELSE BodyStmt
 ;
 
 /* Condition and Operation */
@@ -91,25 +91,44 @@ ConditionStmt
 ;
 
 OperationStmt
-    : ExpressionOrDefineStmt { code_stdoutPrint(&$<obj_val>1, true); } PRINT
-    | DefineStmt CALLED IDENT { code_createVariable(&$<obj_val>1, $<s_var>3); }
-    | PAST IdentStmt VARIABLE ASSIGN ExpressionOrValueStmt { if (code_assign(&$<obj_val>2, &$<obj_val>5)) YYABORT; } TO_IT
-    | ExpressionStmt PAST IdentStmt { if (code_assign(&$<obj_val>3, &$<obj_val>1)) YYABORT; } VARIABLE ASSIGN THAT TO_IT
+    : CreateValueDataListStmt PrintStmt { object_ValueDataListFree(&$<val_data>1); }
+    | CreateValueDataListStmt NAME_IT VariableDefineStmt { object_ValueDataListFree(&$<val_data>1); }
+    | PAST VariableStmt VARIABLE ASSIGN ExpressionOrValueStmt { if (code_assign(&$<obj_val>2, &$<obj_val>5)) YYABORT; } TO_IT
+    | ExpressionStmt PAST VariableStmt { if (code_assign(&$<obj_val>3, &$<obj_val>1)) YYABORT; } VARIABLE ASSIGN THAT TO_IT
 ;
 
-ExpressionOrDefineStmt
-    : ExpressionStmt
-    | DefineStmt
+PrintStmt
+    : PRINT { code_stdoutPrint(&$<val_data>0, true); }
+    | PrintStmt PRINT { code_stdoutPrint(&$<val_data>0, true); }
+;
+
+VariableDefineStmt
+    : VariableDefineStmt SAID IDENT { code_createVariable(&$<val_data>-1, $<s_var>3); } 
+    | IDENT { code_createVariable(&$<val_data>-1, $<s_var>1); } 
+;
+
+CreateValueDataListStmt:
+    // 有數( 一 |「甲」)
+    HERE_IS_A VAR_TYPE { object_ValueDataListCreate($<var_type>2, &$<val_data>$); printf("%p\n", $<val_data>$.valueList.head); }
+        ExpressionOrValueStmt  { if (object_ValueDataListAdd(&$<val_data>3, &$<obj_val>4)) YYABORT; $$ = $<val_data>3; }
+    
+    // (吾有|今有)三數。曰一。曰三。曰五
+    | HERE_ARE NUMBER_LIT VAR_TYPE { object_ValueDataListCreate($<var_type>3, &$<val_data>$); }
+        CreateValueDataList_AddValueDataStmt { $$ = $<val_data>4; }
+    
+    // 加一於二
+    | ExpressionStmt 
+        { object_ValueDataListCreate($<obj_val>1.type, &$<val_data>$); if (object_ValueDataListAdd(&$<val_data>$, &$<obj_val>1)) YYABORT; }
+;
+
+CreateValueDataList_AddValueDataStmt
+    : CreateValueDataList_AddValueDataStmt SAID ExpressionOrValueStmt { if (object_ValueDataListAdd(&$<val_data>0, &$<obj_val>3)) YYABORT; }
+    | SAID ExpressionOrValueStmt { if (object_ValueDataListAdd(&$<val_data>0, &$<obj_val>2)) YYABORT; }
 ;
 
 ExpressionOrValueStmt
     : ExpressionStmt
-    | ValueStmt
-;
-
-DefineStmt
-    : HERE_ARE NUMBER_LIT VAR_TYPE VALUE ExpressionOrValueStmt { $$ = $<obj_val>5; }
-    | HERE_IS_A VAR_TYPE ExpressionOrValueStmt { $$ = $<obj_val>3; }
+    | ValueLiteralStmt
 ;
 
 ExpressionStmt
@@ -117,15 +136,14 @@ ExpressionStmt
         { $$ = code_expression($<exp_op>1, $<exp_left>3, &$<obj_val>2, &$<obj_val>4); }
 ;
 
-
 /* Value */
-ValueStmt
+ValueLiteralStmt
     : STR_BEGIN STR_LIT { $$ = object_createStr($<s_var>2); }
     | NUMBER_LIT { if (($$ = object_createNumber(&$<n_var>1)).type == OBJECT_TYPE_UNDEFINED) YYABORT; }
-    | IdentStmt
+    | VariableStmt
 ;
 
-IdentStmt
+VariableStmt
     : IDENT { if (($$ = object_findIdentByName($<s_var>1)).type == OBJECT_TYPE_UNDEFINED) YYABORT; }
 ;
 

@@ -11,8 +11,12 @@ Object object_createStr(char* str);
 Object object_createNumber(const ScientificNotation* number);
 Object object_findIdentByName(char* name);
 
-bool code_stdoutPrint(Object* obj, bool newLine);
-bool code_createVariable(Object* src, char* variable);
+bool object_VariableDefineCountCheck(const ScientificNotation* count);
+
+bool object_VariableDefineCheck(Object* count);
+
+bool code_stdoutPrint(ValueData* valueData, bool newLine);
+bool code_createVariable(ValueData* valueData, char* name);
 bool code_assign(Object* dest, Object* src);
 Object code_expression(char op, bool op_left, Object* a, Object* b);
 

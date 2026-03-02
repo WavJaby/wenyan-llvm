@@ -17,7 +17,7 @@ set(GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
 file(MAKE_DIRECTORY ${GENERATED_DIR}) # Ensure the directory exists
 
 # Set C flags
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -O0 -g")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -O0")
 
 # --- Bison Target ---
 # Generates parser source and header

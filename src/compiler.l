@@ -37,21 +37,25 @@
         yyoffset += yyleng;                                             \
         yycolumn += yyleng;                                             \
         unregCharStop = true;
+    
+    #define yymore_with_check()         \
+        yymore();                       \
+        yycolumnUtf8 -= yylengUtf8;     \
+        yyoffset -= yyleng;             \
+        yycolumn -= yyleng;
+
 
     #define YY_BREAK                    \
         readUnrecognizedChar();         \
-        if (yy_more_flag) {             \
-            yycolumnUtf8 -= yylengUtf8; \
-            yyoffset -= yyleng;         \
-            yycolumn -= yyleng;         \
-        }                               \
         break;
 
     int strLastTokenLen = 0;
     bool checkStringEnd() {
+        // The length of one "」" is 3
         if (yyleng - strLastTokenLen >= 6) {
-            strLastTokenLen = yyleng - 6;
-            yylval.s_var = memcpy(malloc(strLastTokenLen + 1), yytext, strLastTokenLen);
+            // length minus length of "「「」」"
+            strLastTokenLen = yyleng - 6 - 6;
+            yylval.s_var = memcpy(malloc(strLastTokenLen + 1), yytext + 6, strLastTokenLen);
             yylval.s_var[strLastTokenLen] = 0;
             return true;
         }
@@ -110,10 +114,10 @@ EXCLUDE_QUO [\x20-\x7E]|{B2}|{B3_1}|{B3_2_EXCLUDE_QUO}|{B3_3}|{B3_4}|{B4_1}|{B4_
 <CMT_CON>\r?\n              { yycolumn = yycolumnUtf8 = 0; }
 "//".*                      {}
 
-"「「"    { BEGIN(STR_CON); strLastTokenLen = 0; return STR_BEGIN; }
+"「「"    { BEGIN(STR_CON); yymore_with_check(); strLastTokenLen = 0; return STR_BEGIN; }
 <STR_CON>"」"+    { if (checkStringEnd()) { BEGIN(INITIAL); return STR_LIT; } }
 <STR_CON>\r?\n    { BEGIN(INITIAL); return NEWLINE; }
-<STR_CON>{EXCLUDE_QUO}+    { yymore(); strLastTokenLen = yyleng; }
+<STR_CON>{EXCLUDE_QUO}+    { yymore_with_check(); strLastTokenLen = yyleng; }
 
 "「"        { BEGIN(IDENT_CON); }
 <IDENT_CON>"」"    { BEGIN(INITIAL); }

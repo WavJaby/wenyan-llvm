@@ -183,7 +183,7 @@ static int utf8_to_u32(const char* s, char32_t** out_buf) {
 /* ---------- Tokenizer ---------------------------------------------------- */
 static NumberToken* tokenize(const char32_t* code, size_t len, size_t* token_count) {
     // Allocate space for tokens + BEGIN + END
-    NumberToken* tokens = malloc(len + 2 * sizeof(NumberToken));
+    NumberToken* tokens = malloc((len + 2) * sizeof(NumberToken));
     if (!tokens) return NULL;
 
     size_t count = 0;
@@ -1015,20 +1015,18 @@ bool chineseToArabic(const char* utf8, ScientificNotation* sciOut) {
     }
 
     // Parse the tokens
-    ParseResult* result = malloc(sizeof(ParseResult)); // Allocate result structure
-    const uint8_t error = parse_tokens(tokens, token_count, result);
+    ParseResult result; // Allocate result structure
+    const uint8_t error = parse_tokens(tokens, token_count, &result);
     free(tokens); // Free token array now
-    if (!result || error) {
+    if (error) {
         // Error message printed by parse_tokens
         sciOut->type = ERROR;
-        result_free(result);
-        free(result);
+        result_free(&result);
         return true;
     }
 
-    result_to_sci(result, sciOut);
-    result_free(result);
-    free(result);
+    result_to_sci(&result, sciOut);
+    result_free(&result);
 
     return false;
 }

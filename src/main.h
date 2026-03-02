@@ -1,8 +1,8 @@
 #ifndef MAIN_H
 #define MAIN_H
 #include <stdbool.h>
-#include <stdio.h>
-#include "compiler_common.h"
+#include "object.h"
+#include "value_data.h"
 
 void pushScope();
 void dumpScope();

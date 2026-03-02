@@ -3,6 +3,8 @@
     #include "compiler_util.h"
     #include "compiler_common.h"
     #include "main.h"
+    #include "object.h"
+    #include "value_data.h"
 
     void yyerror(char const* msg);
 %}

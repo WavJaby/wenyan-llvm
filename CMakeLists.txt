@@ -50,6 +50,8 @@ include_directories(
 add_executable(
         main
         ${SRC_DIR}/main.c
+        ${SRC_DIR}/object.c
+        ${SRC_DIR}/value_data.c
         ${SRC_DIR}/lib/byte_buffer.c
         ${SRC_DIR}/lib/chinese_number.c
         ${SRC_DIR}/compiler_util.c

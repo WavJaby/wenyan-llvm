@@ -29,6 +29,8 @@ extern ByteBuffer methodBuff, constBuff, mainFunBuff;
 extern bool compileError;
 extern int scopeLevel;
 
+#define cloneStruct(type, ptr) memcpy(malloc(sizeof(type)), ptr, sizeof(type))
+
 #define ERROR_PREFIX "%s:%d:%d: 錯誤: "
 #define ERROR_TEXT_BUFFER_LEN 128
 #define ERROR_TOKEN_BUFFER_LEN 64

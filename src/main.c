@@ -30,7 +30,6 @@ void utf8_init(void) {
 utf8_init(void) {}
 #endif
 
-#define cloneStruct(type, ptr) memcpy(malloc(sizeof(type)), ptr, sizeof(type))
 #define buffPrintln(buff, format, ...) \
     byteBufferWriteFormat(buff, SCOPE_SPACE_FMT format "\n", SCOPE_SPACE_VAL, ##__VA_ARGS__)
 
@@ -70,29 +69,6 @@ typedef struct {
 /** LinkedList<@link LoopInfo> */
 LinkedList loopLabelList = linkedList_create();
 
-const ObjectType numberType2objectType[] = {
-    [I32] = OBJECT_TYPE_I32,
-    [I64] = OBJECT_TYPE_I64,
-    [F64] = OBJECT_TYPE_F64,
-};
-const char* objectType2llvmType[] = {
-    [OBJECT_TYPE_I32] = "i32",
-    [OBJECT_TYPE_I64] = "i64",
-    [OBJECT_TYPE_F64] = "double",
-};
-const char* objectType2strFormat[] = {
-    [OBJECT_TYPE_I32] = "%d",
-    [OBJECT_TYPE_I64] = "%lld",
-    [OBJECT_TYPE_F64] = "%.16g",
-};
-const char* objectType2str[] = {
-    [OBJECT_TYPE_I32] = "全數",
-    [OBJECT_TYPE_I64] = "長數",
-    [OBJECT_TYPE_F64] = "浮數",
-    [OBJECT_TYPE_STR] = "字串",
-    [OBJECT_TYPE_IDENT] = "識名",
-    [OBJECT_TYPE_UNDEFINED] = "無定",
-};
 const char* symbolPrefix[] = {
     [false] = "var",
     [true] = "exp",

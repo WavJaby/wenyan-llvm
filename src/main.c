@@ -120,8 +120,8 @@ void freeObjectData(Object* obj) {
 void pushScope() {
     printf("> (scope level %d)\n", ++scopeLevel);
 
-    ScopeData scopeData = (ScopeData){
-        .symbolMap = (Map)map_createFromInfo(symbolMapInfo),
+    const ScopeData scopeData = (ScopeData){
+        .symbolMap = (Map)map_createFromInfo(symbolMapInfo)
     };
     linkedList_addp(&scopeList, true, cloneStruct(ScopeData, &scopeData));
 }
@@ -192,8 +192,9 @@ bool object_VariableDefineCheck(Object* count) {
 }
 
 bool code_stdoutPrint(ValueData* valueData, bool newLine) {
+    ScopeData* currentScope = scopeList.head->prev->value;
     Object* object = object_ValueDataListPop(valueData);
-    
+
     printf("PRINT: %p\n", object);
 
     if (object->type == OBJECT_TYPE_IDENT) {
@@ -201,25 +202,18 @@ bool code_stdoutPrint(ValueData* valueData, bool newLine) {
         const SymbolData* symbol = object->symbol;
         printf("GET IDENT: %s\n", symbol->name);
 
-        const char* typeFormat;
         // Load variable value
         switch (symbol->type) {
         case OBJECT_TYPE_I64:
         case OBJECT_TYPE_I32:
         case OBJECT_TYPE_F64:
-            typeFormat = objectType2strFormat[symbol->type];
-            byteBufferWriteFormat(&constBuff,
-                                  "@.str.%d = private unnamed_addr constant [%d x i8] c\"%s%s\"\n",
-                                  constStrCount, 2 + newLine + 1, typeFormat, newLine ? "\\0A\\00" : "\\00");
-
             const char* typeName = objectType2llvmType[symbol->type];
 
             buffPrintln(&mainFunBuff, "%%val.%d = load %s, %s* %%%s.%d",
                         variableCacheCount, typeName, typeName, symbolPrefix[symbol->expCache], symbol->index);
-            buffPrintln(&mainFunBuff, "call i32 @printf(ptr @.str.%d, %s %%val.%d)",
-                        constStrCount, typeName, variableCacheCount);
+            buffPrintln(&mainFunBuff, "call i32 @printf(ptr @fmt_%s%s, %s %%val.%d)",
+                        typeName, newLine? "_n": "", typeName, variableCacheCount);
             variableCacheCount++;
-            constStrCount++;
             freeObjectData(object);
             return false;
         default:
@@ -227,17 +221,18 @@ bool code_stdoutPrint(ValueData* valueData, bool newLine) {
         }
     } else if (object->type == OBJECT_TYPE_STR) {
         // Print immediate string
-        const size_t constStrLen = strlen(object->str);
+        const size_t constStrLen = strlen(object->str) + newLine;
         byteBufferWriteFormat(&constBuff,
-                              "@.str.%d = private unnamed_addr constant [%llu x i8] c\"",
-                              constStrCount, constStrLen + newLine + 1);
+                              "@str.%d = private unnamed_addr constant [%llu x i8] c\"",
+                              constStrCount, constStrLen);
 
         byteBufferWriteStrUtf8(&constBuff, object->str);
         if (newLine) byteBufferWriteStrUtf8(&constBuff, "\n");
 
-        byteBufferWriteStr(&constBuff, "\\00\"\n");
+        byteBufferWriteStr(&constBuff, "\"\n");
 
-        buffPrintln(&mainFunBuff, "call i32 @printf(ptr @.str.%d)", constStrCount);
+        buffPrintln(&mainFunBuff, "call i64 @fwrite(ptr @str.%d, i64 1, i64 %llu, ptr %%stdout)",
+                    constStrCount, constStrLen);
 
         constStrCount++;
         freeObjectData(object);
@@ -251,8 +246,8 @@ bool code_stdoutPrint(ValueData* valueData, bool newLine) {
 }
 
 bool code_createVariable(ValueData* valueData, char* name) {
-    ScopeData* scopeData = scopeList.head->prev->value;
-    Map* currentSymbolMap = &scopeData->symbolMap;
+    ScopeData* currentScope = scopeList.head->prev->value;
+    Map* currentSymbolMap = &currentScope->symbolMap;
     Object* object = object_ValueDataListPop(valueData);
 
     printf("Create variable '%s' with type %d\n", name, object->type);
@@ -576,10 +571,40 @@ int main(int argc, char* argv[]) {
         code("source_filename = \"%s\"", inputFileName);
     }
 
-    // Start parsing
-    // Object endl = {OBJECT_TYPE_STR, false, 0, 0, &(SymbolData){"endl", 0, -1}};
-    // map_putpp(&staticVar, "endl", &endl);
     codeRaw("");
+#ifdef WIN32
+    // Enable windows cmd utf8 output
+    codeRaw("declare dllimport i32 @_setmode(i32, i32)");
+    codeRaw("declare dllimport i32 @SetConsoleCP(i32)");
+    codeRaw("declare dllimport i32 @SetConsoleOutputCP(i32)");
+    codeRaw("define dso_local void @utf8_init() {\n"
+        "%%1 = call i32 @_setmode(i32 0, i32 32768)\n"
+        "%%2 = call i32 @_setmode(i32 1, i32 32768)\n"
+        "%%3 = call i32 @SetConsoleCP(i32 65001)\n"
+        "%%4 = call i32 @SetConsoleOutputCP(i32 65001)\n"
+        "ret void\n"
+        "}");
+
+    // Get stdout
+    codeRaw("@stdout = global ptr null");
+    codeRaw("declare ptr @__acrt_iob_func(i32)");
+#else
+    codeRaw("@stdout = external global ptr");
+#endif
+
+    codeRaw("");
+    codeRaw("declare i32 @printf(i8*, ...)");
+    codeRaw("declare i32 @_write(i32, ptr, i32)");
+    codeRaw("declare i64 @fwrite(ptr, i64, i64, ptr)");
+    codeRaw("");
+    codeRaw("@fmt_i32_n = private unnamed_addr constant [4 x i8] c\"%%d\\0A\\00\"");
+    codeRaw("@fmt_i32 = private unnamed_addr constant [3 x i8] c\"%%d\\00\"");
+    codeRaw("@fmt_i64_n = private unnamed_addr constant [6 x i8] c\"%%lld\\0A\\00\"");
+    codeRaw("@fmt_i64 = private unnamed_addr constant [5 x i8] c\"%%lld\\00\"");
+    // codeRaw("@fmt_float_n = private unnamed_addr constant [4 x i8] c\"%%f\\0A\\00\"");
+    // codeRaw("@fmt_float = private unnamed_addr constant [3 x i8] c\"%%f\\00\"");
+    codeRaw("@fmt_double_n = private unnamed_addr constant [6 x i8] c\"%%llf\\0A\\00\"");
+    codeRaw("@fmt_double = private unnamed_addr constant [5 x i8] c\"%%llf\\00\"");
 
     // Start parsing
     yylineno = 1;
@@ -595,30 +620,17 @@ int main(int argc, char* argv[]) {
     codeRaw("");
     codeRaw("define i32 @main() {");
 #ifdef WIN32
+    // Enable windows cmd utf8 output
     codeRaw("call void @utf8_init()");
+    // Get stdout
+    codeRaw("%%_stdout = call ptr @__acrt_iob_func(i32 1)");
+    codeRaw("store ptr %%_stdout, ptr @stdout");
 #endif
+    codeRaw("%%stdout = load ptr, ptr @stdout");
 
     byteBufferWriteToFile(&mainFunBuff, yyout);
     codeRaw("    ret i32 0");
     codeRaw("}");
-
-#ifdef WIN32
-    codeRaw("");
-    codeRaw("define dso_local void @utf8_init() {\n"
-        "%%1 = call i32 @_setmode(i32 0, i32 32768)\n"
-        "%%2 = call i32 @_setmode(i32 1, i32 32768)\n"
-        "%%3 = call i32 @SetConsoleCP(i32 65001)\n"
-        "%%4 = call i32 @SetConsoleOutputCP(i32 65001)\n"
-        "ret void\n"
-        "}");
-
-    codeRaw("");
-    codeRaw("declare dllimport i32 @_setmode(i32, i32)");
-    codeRaw("declare dllimport i32 @SetConsoleCP(i32)");
-    codeRaw("declare dllimport i32 @SetConsoleOutputCP(i32)");
-#endif
-    codeRaw("declare i32 @printf(i8*, ...)");
-
 
     printf("\nTotal lines: %d\n", yylineno);
     fclose(yyin);
